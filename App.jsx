@@ -1,7 +1,7 @@
 // App.jsx
 import { Slot } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { supabase } from '../supabase';
+import { supabase } from './supabase';
 
 export default function App() {
   const [session, setSession] = useState(null);
