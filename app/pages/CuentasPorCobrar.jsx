@@ -1,22 +1,18 @@
-// app/pages/CuentasPorCobrar.jsx
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
 import * as Print from 'expo-print';
-import { Platform } from 'react-native';
-
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
-
 import {
   ActivityIndicator,
-  Alert,
-  ScrollView,
+  Alert, Platform, ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { TextInput as PaperInput } from 'react-native-paper';
 import * as XLSX from 'xlsx';
@@ -29,16 +25,26 @@ export default function CuentasPorCobrar() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [cargandoExportar, setCargandoExportar] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [form, setForm] = useState({
     id: null,
     folio: '',
     fecha: new Date().toISOString().split('T')[0],
     cliente_id: '',
-    subtotal: '0',
-    iva: '0',
-    total: '0',
-    pago_pendiente: '0',
+    subtotal: '',
+    iva: '',
+    total: '',
+    pago_pendiente: '',
   });
+
+  // Format timestamp for display
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleString('es-CO', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  };
 
   useEffect(() => {
     fetchNotasVenta();
@@ -50,20 +56,15 @@ export default function CuentasPorCobrar() {
       setCargando(true);
       const { data, error } = await supabase
         .from('notas_venta')
-        .select('*, clientes(nombre_contacto, empresa)')
+        .select('*, clientes(nombre_contacto, empresa), created_at, updated_at')
         .gt('pago_pendiente', 0)
         .order('fecha', { ascending: false });
 
-      if (error) {
-        Alert.alert('Error', 'No se pudieron cargar las cuentas por cobrar');
-        console.error('Error fetching notas_venta:', error);
-        return;
-      }
-
+      if (error) throw error;
       setNotasVenta(data || []);
     } catch (error) {
       console.error('Error en fetchNotasVenta:', error);
-      Alert.alert('Error', 'Error inesperado al cargar cuentas por cobrar');
+      Alert.alert('Error', 'Error al cargar cuentas por cobrar');
     } finally {
       setCargando(false);
     }
@@ -76,14 +77,11 @@ export default function CuentasPorCobrar() {
         .select('id, nombre_contacto, empresa')
         .order('nombre_contacto', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching clientes:', error);
-        return;
-      }
-
+      if (error) throw error;
       setClientes(data || []);
     } catch (error) {
       console.error('Error en fetchClientes:', error);
+      Alert.alert('Error', 'Error al cargar clientes');
     }
   };
 
@@ -91,7 +89,7 @@ export default function CuentasPorCobrar() {
     (n) =>
       n.folio.toLowerCase().includes(busqueda.toLowerCase()) ||
       n.clientes.nombre_contacto.toLowerCase().includes(busqueda.toLowerCase()) ||
-      n.clientes.empresa.toLowerCase().includes(busqueda.toLowerCase())
+      (n.clientes.empresa || '').toLowerCase().includes(busqueda.toLowerCase())
   );
 
   const handleChange = (campo, valor) => {
@@ -100,8 +98,8 @@ export default function CuentasPorCobrar() {
 
   const calculateTotal = () => {
     const subtotal = Number(form.subtotal);
-    const iva = Number(form.iva);
-    if (!isNaN(subtotal) && !isNaN(iva)) {
+    const iva = Number(form.iva) || 0;
+    if (!isNaN(subtotal) && !isNaN(iva) && subtotal >= 0) {
       const total = subtotal + iva;
       setForm((prev) => ({
         ...prev,
@@ -111,16 +109,24 @@ export default function CuentasPorCobrar() {
     }
   };
 
+  const handleDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      handleChange('fecha', formattedDate);
+    }
+  };
+
   const resetForm = () => {
     setForm({
       id: null,
       folio: '',
       fecha: new Date().toISOString().split('T')[0],
       cliente_id: '',
-      subtotal: '0',
-      iva: '0',
-      total: '0',
-      pago_pendiente: '0',
+      subtotal: '',
+      iva: '',
+      total: '',
+      pago_pendiente: '',
     });
     setMostrarFormulario(false);
   };
@@ -132,8 +138,13 @@ export default function CuentasPorCobrar() {
       return Alert.alert('Campos requeridos', 'Folio, fecha y cliente son obligatorios.');
     }
 
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(fecha)) {
+      return Alert.alert('Error', 'La fecha debe estar en formato AAAA-MM-DD.');
+    }
+
     const subtotalNum = Number(subtotal);
-    const ivaNum = Number(iva);
+    const ivaNum = Number(iva) || 0;
     const totalNum = Number(total);
     const pagoPendienteNum = Number(pago_pendiente);
 
@@ -160,24 +171,24 @@ export default function CuentasPorCobrar() {
         iva: ivaNum,
         total: totalNum,
         pago_pendiente: pagoPendienteNum,
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = id
         ? await supabase.from('notas_venta').update(dataEnviar).eq('id', id)
-        : await supabase.from('notas_venta').insert([dataEnviar]);
+        : await supabase
+            .from('notas_venta')
+            .insert([dataEnviar])
+            .select()
+            .single();
 
-      if (error) {
-        Alert.alert('Error', 'No se pudo guardar la cuenta por cobrar.');
-        console.error('Error saving nota_venta:', error);
-        return;
-      }
-
-      Alert.alert('Éxito', id ? 'Cuenta actualizada correctamente' : 'Cuenta creada correctamente');
+      if (error) throw error;
+      Alert.alert('Éxito', id ? 'Cuenta actualizada' : 'Cuenta creada');
       resetForm();
       fetchNotasVenta();
     } catch (error) {
       console.error('Error en handleGuardar:', error);
-      Alert.alert('Error', 'Error inesperado al guardar la cuenta.');
+      Alert.alert('Error', 'Error al guardar la cuenta');
     } finally {
       setCargando(false);
     }
@@ -196,18 +207,12 @@ export default function CuentasPorCobrar() {
             try {
               setCargando(true);
               const { error } = await supabase.from('notas_venta').delete().eq('id', id);
-
-              if (error) {
-                Alert.alert('Error', 'No se pudo eliminar la cuenta.');
-                console.error('Error deleting nota_venta:', error);
-                return;
-              }
-
-              Alert.alert('Éxito', 'Cuenta eliminada correctamente');
+              if (error) throw error;
+              Alert.alert('Éxito', 'Cuenta eliminada');
               fetchNotasVenta();
             } catch (error) {
               console.error('Error en handleEliminar:', error);
-              Alert.alert('Error', 'Error inesperado al eliminar la cuenta.');
+              Alert.alert('Error', 'Error al eliminar la cuenta');
             } finally {
               setCargando(false);
             }
@@ -220,36 +225,33 @@ export default function CuentasPorCobrar() {
   const exportarExcel = async () => {
     try {
       setCargandoExportar(true);
-
-      if (notasFiltradas.length === 0) {
+      if (!notasFiltradas.length) {
         Alert.alert('Sin datos', 'No hay cuentas por cobrar para exportar.');
         return;
       }
-
       const datos = notasFiltradas.map((n) => ({
         Folio: n.folio,
         Fecha: n.fecha,
-        Cliente: `${n.clientes.nombre_contacto} (${n.clientes.empresa})`,
-        Subtotal: n.subtotal,
-        IVA: n.iva,
-        Total: n.total,
-        'Pago Pendiente': n.pago_pendiente,
+        Cliente: `${n.clientes.nombre_contacto} (${n.clientes.empresa || 'N/A'})`,
+        Subtotal: n.subtotal.toLocaleString('es-CO'),
+        IVA: n.iva.toLocaleString('es-CO'),
+        Total: n.total.toLocaleString('es-CO'),
+        'Pago Pendiente': n.pago_pendiente.toLocaleString('es-CO'),
+        Creado: formatTimestamp(n.created_at),
+        Actualizado: formatTimestamp(n.updated_at),
       }));
       const ws = XLSX.utils.json_to_sheet(datos);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'CuentasPorCobrar');
-
       const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const uri = FileSystem.cacheDirectory + 'cuentas_por_cobrar.xlsx';
-
       await FileSystem.writeAsStringAsync(uri, base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando Excel:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo Excel.');
+      Alert.alert('Error', 'No se pudo exportar el archivo Excel');
     } finally {
       setCargandoExportar(false);
     }
@@ -258,12 +260,10 @@ export default function CuentasPorCobrar() {
   const exportarPDF = async () => {
     try {
       setCargandoExportar(true);
-
-      if (notasFiltradas.length === 0) {
+      if (!notasFiltradas.length) {
         Alert.alert('Sin datos', 'No hay cuentas por cobrar para exportar.');
         return;
       }
-
       let html = `
         <html>
           <head>
@@ -288,25 +288,27 @@ export default function CuentasPorCobrar() {
                   <th>IVA</th>
                   <th>Total</th>
                   <th>Pago Pendiente</th>
+                  <th>Creado</th>
+                  <th>Actualizado</th>
                 </tr>
               </thead>
               <tbody>
       `;
-
       notasFiltradas.forEach((n) => {
         html += `
           <tr>
             <td>${n.folio}</td>
             <td>${n.fecha}</td>
-            <td>${n.clientes.nombre_contacto} (${n.clientes.empresa})</td>
-            <td>${n.subtotal}</td>
-            <td>${n.iva}</td>
-            <td>${n.total}</td>
-            <td>${n.pago_pendiente}</td>
+            <td>${n.clientes.nombre_contacto} (${n.clientes.empresa || 'N/A'})</td>
+            <td>${n.subtotal.toLocaleString('es-CO')}</td>
+            <td>${n.iva.toLocaleString('es-CO')}</td>
+            <td>${n.total.toLocaleString('es-CO')}</td>
+            <td>${n.pago_pendiente.toLocaleString('es-CO')}</td>
+            <td>${formatTimestamp(n.created_at)}</td>
+            <td>${formatTimestamp(n.updated_at)}</td>
           </tr>
         `;
       });
-
       html += `
               </tbody>
             </table>
@@ -314,12 +316,11 @@ export default function CuentasPorCobrar() {
           </body>
         </html>
       `;
-
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando PDF:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo PDF.');
+      Alert.alert('Error', 'No se pudo exportar el archivo PDF');
     } finally {
       setCargandoExportar(false);
     }
@@ -340,7 +341,7 @@ export default function CuentasPorCobrar() {
   };
 
   const inputTheme = {
-    colors: { primary: '#3b82f6', text: '#fff', placeholder: '#ccc' },
+    colors: { primary: '#3b82f6', text: '#ffffff', placeholder: '#ccc' },
   };
 
   return (
@@ -348,10 +349,10 @@ export default function CuentasPorCobrar() {
       <Text style={styles.title}>💰 Cuentas por Cobrar</Text>
 
       <View style={styles.buscador}>
-        <Ionicons name="search" size={20} color="#ccc" />
+        <Ionicons name="search" size={20} color="#ffffff" />
         <TextInput
           placeholder="Buscar por folio o cliente"
-          placeholderTextColor="#ccc"
+          placeholderTextColor="#ffffff"
           style={styles.inputText}
           value={busqueda}
           onChangeText={setBusqueda}
@@ -366,26 +367,24 @@ export default function CuentasPorCobrar() {
         >
           <Text style={styles.botonTexto}>➕ Agregar Cuenta</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarExcel}
           style={styles.btnExportarExcel}
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📊 Excel</Text>
           )}
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarPDF}
           style={styles.btnExportarPDF}
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📄 PDF</Text>
           )}
@@ -395,7 +394,6 @@ export default function CuentasPorCobrar() {
       {mostrarFormulario && (
         <View style={styles.formulario}>
           <Text style={styles.formTitulo}>{form.id ? 'Editar Cuenta' : 'Nueva Cuenta'}</Text>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
@@ -410,73 +408,81 @@ export default function CuentasPorCobrar() {
               />
             </View>
             <View style={styles.col2}>
-              <PaperInput
-                label="Fecha *"
-                value={form.fecha}
-                onChangeText={(text) => handleChange('fecha', text)}
-                mode="outlined"
-                style={styles.input}
-                theme={inputTheme}
-                textColor="#ffffff"
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                style={styles.datePickerButton}
                 disabled={cargando}
-                placeholder="YYYY-MM-DD"
-              />
+              >
+                <PaperInput
+                  label="Fecha *"
+                  value={form.fecha}
+                  mode="outlined"
+                  style={styles.input}
+                  theme={inputTheme}
+                  textColor="#ffffff"
+                  editable={false}
+                  right={<PaperInput.Icon name="calendar" color="#ffffff" />}
+                />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={new Date(form.fecha)}
+                  mode="date"
+                  display="default"
+                  onChange={handleDateChange}
+                />
+              )}
             </View>
           </View>
-
           <View style={styles.row2}>
-           <View style={styles.col2}>
-  <Text style={styles.label}>Cliente *</Text>
-  {Platform.OS === 'web' ? (
-    <select
-      value={form.cliente_id}
-      onChange={(e) => handleChange('cliente_id', e.target.value)}
-      style={{
-        height: 50,
-        width: '100%',
-        color: '#fff',
-        backgroundColor: '#1e293b',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#ccc',
-        paddingHorizontal: 10,
-        marginBottom: 12,
-      }}
-    >
-      <option value="">Seleccionar cliente</option>
-      {clientes.map((c) => (
-        <option key={c.id} value={c.id}>
-          {`${c.nombre_contacto} (${c.empresa || ''})`}
-        </option>
-      ))}
-    </select>
-  ) : (
-    <View style={styles.pickerContainer}>
-      <Picker
-        selectedValue={form.cliente_id}
-        onValueChange={(value) => handleChange('cliente_id', value)}
-        style={styles.picker}
-        enabled={!cargando}
-        mode="dropdown"
-        dropdownIconColor="#fff"
-      >
-        <Picker.Item label="Seleccionar cliente" value="" />
-        {clientes.map((c) => (
-          <Picker.Item
-            key={c.id}
-            label={`${c.nombre_contacto} (${c.empresa || ''})`}
-            value={c.id}
-          />
-        ))}
-      </Picker>
-    </View>
-  )}
-</View>
-
+            <View style={styles.col2}>
+              <Text style={styles.label}>Cliente *</Text>
+              {Platform.OS === 'web' ? (
+                <select
+                  value={form.cliente_id}
+                  onChange={(e) => handleChange('cliente_id', e.target.value)}
+                  style={styles.webSelect}
+                >
+                  <option value="" style={styles.pickerItemPlaceholder}>
+                    Seleccionar cliente
+                  </option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id} style={styles.pickerItem}>
+                      {`${c.nombre_contacto} (${c.empresa || 'N/A'})`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={form.cliente_id}
+                    onValueChange={(value) => handleChange('cliente_id', value)}
+                    style={styles.picker}
+                    enabled={!cargando}
+                    mode="dropdown"
+                    dropdownIconColor="#ffffff"
+                  >
+                    <Picker.Item
+                      label="Seleccionar cliente"
+                      value=""
+                      style={styles.pickerItemPlaceholder}
+                    />
+                    {clientes.map((c) => (
+                      <Picker.Item
+                        key={c.id}
+                        label={`${c.nombre_contacto} (${c.empresa || 'N/A'})`}
+                        value={c.id}
+                        style={styles.pickerItem}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              )}
+            </View>
             <View style={styles.col2}>
               <PaperInput
                 label="Subtotal *"
-                value={form.subtotal === '0' ? '' : form.subtotal}
+                value={form.subtotal}
                 onChangeText={(text) => {
                   handleChange('subtotal', text);
                   calculateTotal();
@@ -487,15 +493,15 @@ export default function CuentasPorCobrar() {
                 theme={inputTheme}
                 textColor="#ffffff"
                 disabled={cargando}
+                placeholder="0"
               />
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
                 label="IVA"
-                value={form.iva === '0' ? '' : form.iva}
+                value={form.iva}
                 onChangeText={(text) => {
                   handleChange('iva', text);
                   calculateTotal();
@@ -506,37 +512,38 @@ export default function CuentasPorCobrar() {
                 theme={inputTheme}
                 textColor="#ffffff"
                 disabled={cargando}
+                placeholder="0"
               />
             </View>
             <View style={styles.col2}>
               <PaperInput
                 label="Total"
-                value={form.total === '0' ? '' : form.total}
+                value={form.total}
                 mode="outlined"
                 style={styles.input}
                 keyboardType="numeric"
                 theme={inputTheme}
                 textColor="#ffffff"
                 disabled
+                placeholder="0"
               />
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
                 label="Pago Pendiente"
-                value={form.pago_pendiente === '0' ? '' : form.pago_pendiente}
+                value={form.pago_pendiente}
                 mode="outlined"
                 style={styles.input}
                 keyboardType="numeric"
                 theme={inputTheme}
                 textColor="#ffffff"
                 disabled
+                placeholder="0"
               />
             </View>
           </View>
-
           <View style={styles.botonesForm}>
             <TouchableOpacity
               style={styles.btnGuardar}
@@ -544,7 +551,7 @@ export default function CuentasPorCobrar() {
               disabled={cargando}
             >
               {cargando ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.botonTexto}>{form.id ? 'Actualizar' : 'Guardar'}</Text>
               )}
@@ -580,12 +587,18 @@ export default function CuentasPorCobrar() {
           notasFiltradas.map((n) => (
             <View key={n.id} style={styles.card}>
               <Text style={styles.nombre}>{n.folio}</Text>
-              <Text style={styles.info}>👤 {n.clientes.nombre_contacto} ({n.clientes.empresa})</Text>
-              <Text style={styles.info}>📅 {n.fecha}</Text>
-              <Text style={styles.info}>💵 Subtotal: ${n.subtotal}</Text>
-              <Text style={styles.info}>🧾 IVA: ${n.iva}</Text>
-              <Text style={styles.info}>💰 Total: ${n.total}</Text>
-              <Text style={styles.info}>⏳ Pago Pendiente: ${n.pago_pendiente}</Text>
+              <Text style={styles.info}>
+                👤 {n.clientes.nombre_contacto} ({n.clientes.empresa || 'N/A'})
+              </Text>
+              <Text style={styles.info}>📅 Fecha: {n.fecha}</Text>
+              <Text style={styles.info}>💵 Subtotal: ${n.subtotal.toLocaleString('es-CO')}</Text>
+              <Text style={styles.info}>🧾 IVA: ${n.iva.toLocaleString('es-CO')}</Text>
+              <Text style={styles.info}>💰 Total: ${n.total.toLocaleString('es-CO')}</Text>
+              <Text style={styles.info}>
+                ⏳ Pago Pendiente: ${n.pago_pendiente.toLocaleString('es-CO')}
+              </Text>
+              <Text style={styles.info}>📅 Creado: {formatTimestamp(n.created_at)}</Text>
+              <Text style={styles.info}>📅 Actualizado: {formatTimestamp(n.updated_at)}</Text>
               <View style={styles.botonesCard}>
                 <TouchableOpacity
                   onPress={() => editarNota(n)}
@@ -612,7 +625,7 @@ export default function CuentasPorCobrar() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a', padding: 10 },
-  title: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
+  title: { color: '#ffffff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
   buscador: {
     flexDirection: 'row',
     backgroundColor: '#1e293b',
@@ -621,7 +634,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  inputText: { color: '#fff', flex: 1, paddingVertical: 10, marginLeft: 6 },
+  inputText: { color: '#ffffff', flex: 1, paddingVertical: 10, marginLeft: 6 },
   botoneraDerecha: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -661,7 +674,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  botonTexto: { color: '#fff', fontWeight: 'bold' },
+  botonTexto: { color: '#ffffff', fontWeight: 'bold' },
   formulario: {
     backgroundColor: '#1e293b',
     borderRadius: 10,
@@ -671,7 +684,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  formTitulo: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
+  formTitulo: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   botonesForm: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -699,7 +712,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 12,
   },
-  nombre: { fontSize: 16, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
+  nombre: { fontSize: 16, fontWeight: 'bold', color: '#ffffff', marginBottom: 8 },
   info: { color: '#cbd5e1', marginTop: 4 },
   botonesCard: {
     flexDirection: 'row',
@@ -720,25 +733,48 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: '45%',
   },
- pickerContainer: {
-  backgroundColor: '#1e293b',
-  borderWidth: 1,
-  borderColor: '#ccc',
-  borderRadius: 8,
-  overflow: 'hidden',
-  marginBottom: 12,
-},
-
-picker: {
-  color: '#000000', // texto blanco
-  height: 30,
-  width: '100%',
-},
-
+  pickerContainer: {
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  picker: {
+    color: '#ffffff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
+  pickerItem: {
+    color: '#ffffff',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
+  },
+  pickerItemPlaceholder: {
+    color: '#cccccc',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
+  },
+  webSelect: {
+    height: 40,
+    width: '100%',
+    color: '#ffffff',
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    paddingHorizontal: 10,
+    marginBottom: 12,
+    fontSize: 16,
+  },
   label: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 12,
     marginBottom: 4,
+  },
+  datePickerButton: {
+    marginBottom: 12,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -746,7 +782,7 @@ picker: {
     padding: 20,
   },
   loadingText: {
-    color: '#fff',
+    color: '#ffffff',
     marginTop: 10,
   },
   emptyContainer: {

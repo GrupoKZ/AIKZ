@@ -1,5 +1,5 @@
-// app/pages/CuentasPorPagar.jsx
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
 import * as Print from 'expo-print';
@@ -28,17 +28,27 @@ export default function CuentasPorPagar() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [cargandoExportar, setCargandoExportar] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [form, setForm] = useState({
     id: null,
     fecha: new Date().toISOString().split('T')[0],
     proveedor: '',
-    importe: '0',
+    importe: '',
     estado: 'Pendiente',
     descripcion: '',
     gasto_id: '',
   });
 
   const estados = ['Pendiente', 'Pagado'];
+
+  // Format timestamp for display
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleString('es-CO', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  };
 
   useEffect(() => {
     fetchCuentas();
@@ -50,19 +60,14 @@ export default function CuentasPorPagar() {
       setCargando(true);
       const { data, error } = await supabase
         .from('cuentas_por_pagar')
-        .select('*, gastos(concepto)')
+        .select('*, gastos(concepto), created_at, updated_at')
         .order('fecha', { ascending: false });
 
-      if (error) {
-        Alert.alert('Error', 'No se pudieron cargar las cuentas por pagar');
-        console.error('Error fetching cuentas_por_pagar:', error);
-        return;
-      }
-
+      if (error) throw error;
       setCuentas(data || []);
     } catch (error) {
       console.error('Error en fetchCuentas:', error);
-      Alert.alert('Error', 'Error inesperado al cargar cuentas');
+      Alert.alert('Error', 'Error al cargar cuentas por pagar');
     } finally {
       setCargando(false);
     }
@@ -75,25 +80,31 @@ export default function CuentasPorPagar() {
         .select('id, concepto')
         .order('fecha', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching gastos:', error);
-        return;
-      }
-
+      if (error) throw error;
       setGastos(data || []);
     } catch (error) {
       console.error('Error en fetchGastos:', error);
+      Alert.alert('Error', 'Error al cargar gastos');
     }
   };
 
   const cuentasFiltradas = cuentas.filter(
     (c) =>
       c.proveedor.toLowerCase().includes(busqueda.toLowerCase()) ||
-      c.estado.toLowerCase().includes(busqueda.toLowerCase())
+      c.estado.toLowerCase().includes(busqueda.toLowerCase()) ||
+      (c.descripcion || '').toLowerCase().includes(busqueda.toLowerCase())
   );
 
   const handleChange = (campo, valor) => {
     setForm((prev) => ({ ...prev, [campo]: valor }));
+  };
+
+  const handleDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      handleChange('fecha', formattedDate);
+    }
   };
 
   const resetForm = () => {
@@ -101,7 +112,7 @@ export default function CuentasPorPagar() {
       id: null,
       fecha: new Date().toISOString().split('T')[0],
       proveedor: '',
-      importe: '0',
+      importe: '',
       estado: 'Pendiente',
       descripcion: '',
       gasto_id: '',
@@ -116,10 +127,18 @@ export default function CuentasPorPagar() {
       return Alert.alert('Campos requeridos', 'Fecha, proveedor y estado son obligatorios.');
     }
 
-    const importeNum = Number(importe);
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(fecha)) {
+      return Alert.alert('Error', 'La fecha debe estar en formato AAAA-MM-DD.');
+    }
 
+    const importeNum = Number(importe);
     if (isNaN(importeNum) || importeNum <= 0) {
       return Alert.alert('Error', 'El importe debe ser un número mayor a 0.');
+    }
+
+    if (!estados.includes(estado)) {
+      return Alert.alert('Error', 'El estado debe ser "Pendiente" o "Pagado".');
     }
 
     try {
@@ -131,24 +150,20 @@ export default function CuentasPorPagar() {
         estado,
         descripcion: descripcion.trim() || null,
         gasto_id: gasto_id || null,
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = id
         ? await supabase.from('cuentas_por_pagar').update(dataEnviar).eq('id', id)
-        : await supabase.from('cuentas_por_pagar').insert([dataEnviar]);
+        : await supabase.from('cuentas_por_pagar').insert([dataEnviar]).select().single();
 
-      if (error) {
-        Alert.alert('Error', 'No se pudo guardar la cuenta por pagar.');
-        console.error('Error saving cuentas_por_pagar:', error);
-        return;
-      }
-
-      Alert.alert('Éxito', id ? 'Cuenta actualizada correctamente' : 'Cuenta creada correctamente');
+      if (error) throw error;
+      Alert.alert('Éxito', id ? 'Cuenta actualizada' : 'Cuenta creada');
       resetForm();
       fetchCuentas();
     } catch (error) {
       console.error('Error en handleGuardar:', error);
-      Alert.alert('Error', 'Error inesperado al guardar la cuenta.');
+      Alert.alert('Error', 'Error al guardar la cuenta');
     } finally {
       setCargando(false);
     }
@@ -167,18 +182,12 @@ export default function CuentasPorPagar() {
             try {
               setCargando(true);
               const { error } = await supabase.from('cuentas_por_pagar').delete().eq('id', id);
-
-              if (error) {
-                Alert.alert('Error', 'No se pudo eliminar la cuenta.');
-                console.error('Error deleting cuentas_por_pagar:', error);
-                return;
-              }
-
-              Alert.alert('Éxito', 'Cuenta eliminada correctamente');
+              if (error) throw error;
+              Alert.alert('Éxito', 'Cuenta eliminada');
               fetchCuentas();
             } catch (error) {
               console.error('Error en handleEliminar:', error);
-              Alert.alert('Error', 'Error inesperado al eliminar la cuenta.');
+              Alert.alert('Error', 'Error al eliminar la cuenta');
             } finally {
               setCargando(false);
             }
@@ -191,35 +200,32 @@ export default function CuentasPorPagar() {
   const exportarExcel = async () => {
     try {
       setCargandoExportar(true);
-
-      if (cuentasFiltradas.length === 0) {
+      if (!cuentasFiltradas.length) {
         Alert.alert('Sin datos', 'No hay cuentas por pagar para exportar.');
         return;
       }
-
       const datos = cuentasFiltradas.map((c) => ({
         Fecha: c.fecha,
         Proveedor: c.proveedor,
-        Importe: c.importe,
+        Importe: c.importe.toLocaleString('es-CO'),
         Estado: c.estado,
-        Descripción: c.descripcion || '-',
-        Gasto: c.gastos?.concepto || '-',
+        Descripción: c.descripcion || 'N/A',
+        Gasto: c.gastos?.concepto || 'N/A',
+        Creado: formatTimestamp(c.created_at),
+        Actualizado: formatTimestamp(c.updated_at),
       }));
       const ws = XLSX.utils.json_to_sheet(datos);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'CuentasPorPagar');
-
       const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const uri = FileSystem.cacheDirectory + 'cuentas_por_pagar.xlsx';
-
       await FileSystem.writeAsStringAsync(uri, base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando Excel:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo Excel.');
+      Alert.alert('Error', 'No se pudo exportar el archivo Excel');
     } finally {
       setCargandoExportar(false);
     }
@@ -228,12 +234,10 @@ export default function CuentasPorPagar() {
   const exportarPDF = async () => {
     try {
       setCargandoExportar(true);
-
-      if (cuentasFiltradas.length === 0) {
+      if (!cuentasFiltradas.length) {
         Alert.alert('Sin datos', 'No hay cuentas por pagar para exportar.');
         return;
       }
-
       let html = `
         <html>
           <head>
@@ -257,24 +261,26 @@ export default function CuentasPorPagar() {
                   <th>Estado</th>
                   <th>Descripción</th>
                   <th>Gasto</th>
+                  <th>Creado</th>
+                  <th>Actualizado</th>
                 </tr>
               </thead>
               <tbody>
       `;
-
       cuentasFiltradas.forEach((c) => {
         html += `
           <tr>
             <td>${c.fecha}</td>
             <td>${c.proveedor}</td>
-            <td>${c.importe}</td>
+            <td>${c.importe.toLocaleString('es-CO')}</td>
             <td>${c.estado}</td>
-            <td>${c.descripcion || '-'}</td>
-            <td>${c.gastos?.concepto || '-'}</td>
+            <td>${c.descripcion || 'N/A'}</td>
+            <td>${c.gastos?.concepto || 'N/A'}</td>
+            <td>${formatTimestamp(c.created_at)}</td>
+            <td>${formatTimestamp(c.updated_at)}</td>
           </tr>
         `;
       });
-
       html += `
               </tbody>
             </table>
@@ -282,12 +288,11 @@ export default function CuentasPorPagar() {
           </body>
         </html>
       `;
-
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando PDF:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo PDF.');
+      Alert.alert('Error', 'No se pudo exportar el archivo PDF');
     } finally {
       setCargandoExportar(false);
     }
@@ -307,7 +312,7 @@ export default function CuentasPorPagar() {
   };
 
   const inputTheme = {
-    colors: { primary: '#3b82f6', text: '#fff', placeholder: '#ccc' },
+    colors: { primary: '#3b82f6', text: '#ffffff', placeholder: '#ccc' },
   };
 
   return (
@@ -319,10 +324,10 @@ export default function CuentasPorPagar() {
       <Text style={styles.title}>💸 Cuentas por Pagar</Text>
 
       <View style={styles.buscador}>
-        <Ionicons name="search" size={20} color="#ccc" />
+        <Ionicons name="search" size={20} color="#ffffff" />
         <TextInput
-          placeholder="Buscar por proveedor o estado"
-          placeholderTextColor="#ccc"
+          placeholder="Buscar por proveedor, estado o descripción"
+          placeholderTextColor="#ffffff"
           style={styles.inputText}
           value={busqueda}
           onChangeText={setBusqueda}
@@ -337,26 +342,24 @@ export default function CuentasPorPagar() {
         >
           <Text style={styles.botonTexto}>➕ Agregar Cuenta</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarExcel}
           style={styles.btnExportarExcel}
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📊 Excel</Text>
           )}
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarPDF}
           style={styles.btnExportarPDF}
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📄 PDF</Text>
           )}
@@ -366,20 +369,32 @@ export default function CuentasPorPagar() {
       {mostrarFormulario && (
         <View style={styles.formulario}>
           <Text style={styles.formTitulo}>{form.id ? 'Editar Cuenta' : 'Nueva Cuenta'}</Text>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
-              <PaperInput
-                label="Fecha *"
-                value={form.fecha}
-                onChangeText={(text) => handleChange('fecha', text)}
-                mode="outlined"
-                style={styles.input}
-                theme={inputTheme}
-                textColor="#ffffff"
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                style={styles.datePickerButton}
                 disabled={cargando}
-                placeholder="YYYY-MM-DD"
-              />
+              >
+                <PaperInput
+                  label="Fecha *"
+                  value={form.fecha}
+                  mode="outlined"
+                  style={styles.input}
+                  theme={inputTheme}
+                  textColor="#ffffff"
+                  editable={false}
+                  right={<PaperInput.Icon name="calendar" color="#ffffff" />}
+                />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={new Date(form.fecha)}
+                  mode="date"
+                  display="default"
+                  onChange={handleDateChange}
+                />
+              )}
             </View>
             <View style={styles.col2}>
               <PaperInput
@@ -394,12 +409,11 @@ export default function CuentasPorPagar() {
               />
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
                 label="Importe *"
-                value={form.importe === '0' ? '' : form.importe}
+                value={form.importe}
                 onChangeText={(text) => handleChange('importe', text)}
                 mode="outlined"
                 style={styles.input}
@@ -407,6 +421,7 @@ export default function CuentasPorPagar() {
                 theme={inputTheme}
                 textColor="#ffffff"
                 disabled={cargando}
+                placeholder="0"
               />
             </View>
             <View style={styles.col2}>
@@ -417,16 +432,21 @@ export default function CuentasPorPagar() {
                   onValueChange={(value) => handleChange('estado', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar estado" value="" />
+                  <Picker.Item
+                    label="Seleccionar estado"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
                   {estados.map((e) => (
-                    <Picker.Item key={e} label={e} value={e} />
+                    <Picker.Item key={e} label={e} value={e} style={styles.pickerItem} />
                   ))}
                 </Picker>
               </View>
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
@@ -448,16 +468,26 @@ export default function CuentasPorPagar() {
                   onValueChange={(value) => handleChange('gasto_id', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Sin gasto" value="" />
+                  <Picker.Item
+                    label="Sin gasto"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
                   {gastos.map((g) => (
-                    <Picker.Item key={g.id} label={g.concepto} value={g.id} />
+                    <Picker.Item
+                      key={g.id}
+                      label={g.concepto}
+                      value={g.id}
+                      style={styles.pickerItem}
+                    />
                   ))}
                 </Picker>
               </View>
             </View>
           </View>
-
           <View style={styles.botonesForm}>
             <TouchableOpacity
               style={styles.btnGuardar}
@@ -465,7 +495,7 @@ export default function CuentasPorPagar() {
               disabled={cargando}
             >
               {cargando ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.botonTexto}>{form.id ? 'Actualizar' : 'Guardar'}</Text>
               )}
@@ -492,7 +522,9 @@ export default function CuentasPorPagar() {
         {cuentasFiltradas.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
-              {busqueda ? 'No se encontraron cuentas con esa búsqueda' : 'No hay cuentas por pagar registradas'}
+              {busqueda
+                ? 'No se encontraron cuentas con esa búsqueda'
+                : 'No hay cuentas por pagar registradas'}
             </Text>
           </View>
         ) : (
@@ -500,10 +532,12 @@ export default function CuentasPorPagar() {
             <View key={c.id} style={styles.card}>
               <Text style={styles.nombre}>{c.proveedor}</Text>
               <Text style={styles.info}>📅 Fecha: {c.fecha}</Text>
-              <Text style={styles.info}>💰 Importe: {c.importe}</Text>
+              <Text style={styles.info}>💰 Importe: ${c.importe.toLocaleString('es-CO')}</Text>
               <Text style={styles.info}>📋 Estado: {c.estado}</Text>
-              <Text style={styles.info}>📝 Descripción: {c.descripcion || '-'}</Text>
-              <Text style={styles.info}>🧾 Gasto: {c.gastos?.concepto || '-'}</Text>
+              <Text style={styles.info}>📝 Descripción: {c.descripcion || 'N/A'}</Text>
+              <Text style={styles.info}>🧾 Gasto: {c.gastos?.concepto || 'N/A'}</Text>
+              <Text style={styles.info}>📅 Creado: {formatTimestamp(c.created_at)}</Text>
+              <Text style={styles.info}>📅 Actualizado: {formatTimestamp(c.updated_at)}</Text>
               <View style={styles.botonesCard}>
                 <TouchableOpacity
                   onPress={() => editarCuenta(c)}
@@ -530,7 +564,7 @@ export default function CuentasPorPagar() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a', padding: 10 },
-  title: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
+  title: { color: '#ffffff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
   buscador: {
     flexDirection: 'row',
     backgroundColor: '#1e293b',
@@ -539,7 +573,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  inputText: { color: '#fff', flex: 1, paddingVertical: 10, marginLeft: 6 },
+  inputText: { color: '#ffffff', flex: 1, paddingVertical: 10, marginLeft: 6 },
   botoneraDerecha: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -579,7 +613,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  botonTexto: { color: '#fff', fontWeight: 'bold' },
+  botonTexto: { color: '#ffffff', fontWeight: 'bold' },
   formulario: {
     backgroundColor: '#1e293b',
     borderRadius: 10,
@@ -589,7 +623,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  formTitulo: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
+  formTitulo: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   botonesForm: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -617,7 +651,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 12,
   },
-  nombre: { fontSize: 16, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
+  nombre: { fontSize: 16, fontWeight: 'bold', color: '#ffffff', marginBottom: 8 },
   info: { color: '#cbd5e1', marginTop: 4 },
   botonesCard: {
     flexDirection: 'row',
@@ -640,18 +674,34 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     backgroundColor: '#1e293b',
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#3b82f6',
+    borderRadius: 8,
+    overflow: 'hidden',
     marginBottom: 12,
   },
   picker: {
-    color: '#fff',
+    color: '#ffffff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
+  pickerItem: {
+    color: '#ffffff',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
+  },
+  pickerItemPlaceholder: {
+    color: '#cccccc',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
   },
   label: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 12,
     marginBottom: 4,
+  },
+  datePickerButton: {
+    marginBottom: 12,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -659,7 +709,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   loadingText: {
-    color: '#fff',
+    color: '#ffffff',
     marginTop: 10,
   },
   emptyContainer: {

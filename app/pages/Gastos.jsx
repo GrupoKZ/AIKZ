@@ -1,5 +1,5 @@
-// app/pages/Gastos.jsx
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as FileSystem from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -24,13 +24,23 @@ export default function Gastos() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [cargandoExportar, setCargandoExportar] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [form, setForm] = useState({
     id: null,
-    fecha: new Date().toISOString().split('T')[0], // Default to today
+    fecha: new Date().toISOString().split('T')[0],
     concepto: '',
-    importe: '0',
+    importe: '',
     categoria: '',
   });
+
+  // Format timestamp for display
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    return new Date(timestamp).toLocaleString('es-CO', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    });
+  };
 
   useEffect(() => {
     fetchGastos();
@@ -41,7 +51,7 @@ export default function Gastos() {
       setCargando(true);
       const { data, error } = await supabase
         .from('gastos')
-        .select('*')
+        .select('*, created_at, updated_at')
         .order('fecha', { ascending: false });
 
       if (error) {
@@ -49,7 +59,6 @@ export default function Gastos() {
         console.error('Error fetching gastos:', error);
         return;
       }
-
       setGastos(data || []);
     } catch (error) {
       console.error('Error en fetchGastos:', error);
@@ -62,11 +71,19 @@ export default function Gastos() {
   const gastosFiltrados = gastos.filter(
     (g) =>
       g.concepto.toLowerCase().includes(busqueda.toLowerCase()) ||
-      g.categoria.toLowerCase().includes(busqueda.toLowerCase())
+      (g.categoria || '').toLowerCase().includes(busqueda.toLowerCase())
   );
 
   const handleChange = (campo, valor) => {
     setForm((prev) => ({ ...prev, [campo]: valor }));
+  };
+
+  const handleDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      const formattedDate = selectedDate.toISOString().split('T')[0];
+      handleChange('fecha', formattedDate);
+    }
   };
 
   const resetForm = () => {
@@ -74,7 +91,7 @@ export default function Gastos() {
       id: null,
       fecha: new Date().toISOString().split('T')[0],
       concepto: '',
-      importe: '0',
+      importe: '',
       categoria: '',
     });
     setMostrarFormulario(false);
@@ -85,6 +102,11 @@ export default function Gastos() {
 
     if (!fecha || !concepto.trim()) {
       return Alert.alert('Campos requeridos', 'Fecha y concepto son obligatorios.');
+    }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(fecha)) {
+      return Alert.alert('Error', 'La fecha debe estar en formato AAAA-MM-DD.');
     }
 
     const importeNum = Number(importe);
@@ -99,6 +121,7 @@ export default function Gastos() {
         concepto: concepto.trim(),
         importe: importeNum,
         categoria: categoria.trim() || null,
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = id
@@ -135,13 +158,11 @@ export default function Gastos() {
             try {
               setCargando(true);
               const { error } = await supabase.from('gastos').delete().eq('id', id);
-
               if (error) {
                 Alert.alert('Error', 'No se pudo eliminar el gasto.');
                 console.error('Error deleting gasto:', error);
                 return;
               }
-
               Alert.alert('Éxito', 'Gasto eliminado correctamente');
               fetchGastos();
             } catch (error) {
@@ -159,29 +180,26 @@ export default function Gastos() {
   const exportarExcel = async () => {
     try {
       setCargandoExportar(true);
-
       if (gastosFiltrados.length === 0) {
         Alert.alert('Sin datos', 'No hay gastos para exportar.');
         return;
       }
-
-      const datos = gastosFiltrados.map(({ id, fecha, concepto, importe, categoria }) => ({
-        fecha,
-        concepto,
-        importe,
-        categoria: categoria || 'Sin categoría',
+      const datos = gastosFiltrados.map((g) => ({
+        Fecha: g.fecha,
+        Concepto: g.concepto,
+        Importe: g.importe,
+        Categoría: g.categoria || 'Sin categoría',
+        Creado: formatTimestamp(g.created_at),
+        Actualizado: formatTimestamp(g.updated_at),
       }));
       const ws = XLSX.utils.json_to_sheet(datos);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Gastos');
-
       const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const uri = FileSystem.cacheDirectory + 'gastos.xlsx';
-
       await FileSystem.writeAsStringAsync(uri, base64, {
         encoding: FileSystem.EncodingType.Base64,
       });
-
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando Excel:', error);
@@ -194,12 +212,10 @@ export default function Gastos() {
   const exportarPDF = async () => {
     try {
       setCargandoExportar(true);
-
       if (gastosFiltrados.length === 0) {
         Alert.alert('Sin datos', 'No hay gastos para exportar.');
         return;
       }
-
       let html = `
         <html>
           <head>
@@ -221,22 +237,24 @@ export default function Gastos() {
                   <th>Concepto</th>
                   <th>Importe</th>
                   <th>Categoría</th>
+                  <th>Creado</th>
+                  <th>Actualizado</th>
                 </tr>
               </thead>
               <tbody>
       `;
-
       gastosFiltrados.forEach((g) => {
         html += `
           <tr>
             <td>${g.fecha}</td>
             <td>${g.concepto}</td>
-            <td>${g.importe}</td>
+            <td>${g.importe.toLocaleString('es-CO')}</td>
             <td>${g.categoria || 'Sin categoría'}</td>
+            <td>${formatTimestamp(g.created_at)}</td>
+            <td>${formatTimestamp(g.updated_at)}</td>
           </tr>
         `;
       });
-
       html += `
               </tbody>
             </table>
@@ -244,7 +262,6 @@ export default function Gastos() {
           </body>
         </html>
       `;
-
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error) {
@@ -267,7 +284,7 @@ export default function Gastos() {
   };
 
   const inputTheme = {
-    colors: { primary: '#3b82f6', text: '#fff', placeholder: '#ccc' },
+    colors: { primary: '#3b82f6', text: '#ffffff', placeholder: '#ccc' },
   };
 
   return (
@@ -275,10 +292,10 @@ export default function Gastos() {
       <Text style={styles.title}>💸 Lista de Gastos</Text>
 
       <View style={styles.buscador}>
-        <Ionicons name="search" size={20} color="#ccc" />
+        <Ionicons name="search" size={20} color="#ffffff" />
         <TextInput
           placeholder="Buscar por concepto o categoría"
-          placeholderTextColor="#ccc"
+          placeholderTextColor="#ffffff"
           style={styles.inputText}
           value={busqueda}
           onChangeText={setBusqueda}
@@ -293,26 +310,24 @@ export default function Gastos() {
         >
           <Text style={styles.botonTexto}>➕ Agregar Gasto</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarExcel}
           style={styles.btnExportarExcel}
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📊 Excel</Text>
           )}
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarPDF}
           style={styles.btnExportarPDF}
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📄 PDF</Text>
           )}
@@ -322,20 +337,32 @@ export default function Gastos() {
       {mostrarFormulario && (
         <View style={styles.formulario}>
           <Text style={styles.formTitulo}>{form.id ? 'Editar Gasto' : 'Nuevo Gasto'}</Text>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
-              <PaperInput
-                label="Fecha *"
-                value={form.fecha}
-                onChangeText={(text) => handleChange('fecha', text)}
-                mode="outlined"
-                style={styles.input}
-                theme={inputTheme}
-                textColor="#ffffff"
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                style={styles.datePickerButton}
                 disabled={cargando}
-                placeholder="YYYY-MM-DD"
-              />
+              >
+                <PaperInput
+                  label="Fecha *"
+                  value={form.fecha}
+                  mode="outlined"
+                  style={styles.input}
+                  theme={inputTheme}
+                  textColor="#ffffff"
+                  editable={false}
+                  right={<PaperInput.Icon name="calendar" color="#ffffff" />}
+                />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={new Date(form.fecha)}
+                  mode="date"
+                  display="default"
+                  onChange={handleDateChange}
+                />
+              )}
             </View>
             <View style={styles.col2}>
               <PaperInput
@@ -350,12 +377,11 @@ export default function Gastos() {
               />
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
                 label="Importe *"
-                value={form.importe === '0' ? '' : form.importe}
+                value={form.importe}
                 onChangeText={(text) => handleChange('importe', text)}
                 mode="outlined"
                 style={styles.input}
@@ -363,6 +389,7 @@ export default function Gastos() {
                 theme={inputTheme}
                 textColor="#ffffff"
                 disabled={cargando}
+                placeholder="0"
               />
             </View>
             <View style={styles.col2}>
@@ -378,7 +405,6 @@ export default function Gastos() {
               />
             </View>
           </View>
-
           <View style={styles.botonesForm}>
             <TouchableOpacity
               style={styles.btnGuardar}
@@ -386,7 +412,7 @@ export default function Gastos() {
               disabled={cargando}
             >
               {cargando ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.botonTexto}>{form.id ? 'Actualizar' : 'Guardar'}</Text>
               )}
@@ -420,9 +446,11 @@ export default function Gastos() {
           gastosFiltrados.map((g) => (
             <View key={g.id} style={styles.card}>
               <Text style={styles.nombre}>{g.concepto}</Text>
-              <Text style={styles.info}>📅 {g.fecha}</Text>
-              <Text style={styles.info}>💰 ${g.importe}</Text>
-              {g.categoria && <Text style={styles.info}>🏷️ {g.categoria}</Text>}
+              <Text style={styles.info}>📅 Fecha: {g.fecha}</Text>
+              <Text style={styles.info}>💰 Importe: ${g.importe.toLocaleString('es-CO')}</Text>
+              <Text style={styles.info}>🏷️ Categoría: {g.categoria || 'Sin categoría'}</Text>
+              <Text style={styles.info}>📅 Creado: {formatTimestamp(g.created_at)}</Text>
+              <Text style={styles.info}>📅 Actualizado: {formatTimestamp(g.updated_at)}</Text>
               <View style={styles.botonesCard}>
                 <TouchableOpacity
                   onPress={() => editarGasto(g)}
@@ -449,7 +477,7 @@ export default function Gastos() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a', padding: 10 },
-  title: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
+  title: { color: '#ffffff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
   buscador: {
     flexDirection: 'row',
     backgroundColor: '#1e293b',
@@ -458,7 +486,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  inputText: { color: '#fff', flex: 1, paddingVertical: 10, marginLeft: 6 },
+  inputText: { color: '#ffffff', flex: 1, paddingVertical: 10, marginLeft: 6 },
   botoneraDerecha: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -498,7 +526,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  botonTexto: { color: '#fff', fontWeight: 'bold' },
+  botonTexto: { color: '#ffffff', fontWeight: 'bold' },
   formulario: {
     backgroundColor: '#1e293b',
     borderRadius: 10,
@@ -508,7 +536,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  formTitulo: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
+  formTitulo: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   botonesForm: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -536,7 +564,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 12,
   },
-  nombre: { fontSize: 16, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
+  nombre: { fontSize: 16, fontWeight: 'bold', color: '#ffffff', marginBottom: 8 },
   info: { color: '#cbd5e1', marginTop: 4 },
   botonesCard: {
     flexDirection: 'row',
@@ -557,13 +585,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: '45%',
   },
+  datePickerButton: {
+    marginBottom: 12,
+  },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
   loadingText: {
-    color: '#fff',
+    color: '#ffffff',
     marginTop: 10,
   },
   emptyContainer: {
