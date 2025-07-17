@@ -771,6 +771,34 @@ export default function DashboardAdmin() {
   };
 
   const styles = getResponsiveStyles();
+  const TypingIndicator = () => {
+  const [dotOpacity, setDotOpacity] = useState([1, 0.5, 0.3]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDotOpacity((prev) => [prev[2], prev[0], prev[1]]);
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <View style={styles.typingIndicator}>
+      <Text style={styles.mensajeTexto}>IA está escribiendo</Text>
+      <View style={styles.typingDots}>
+        {dotOpacity.map((opacity, index) => (
+          <View
+            key={index}
+            style={[
+              styles.typingDot,
+              { opacity }
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+};
+
 
   // Header Component
   const Header = () => (

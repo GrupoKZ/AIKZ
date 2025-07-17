@@ -1,4 +1,3 @@
-// app/pages/ProduccionCelofan.jsx
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
@@ -54,15 +53,17 @@ export default function ProduccionCelofan() {
         .order('fecha', { ascending: false });
 
       if (error) {
-        Alert.alert('Error', 'No se pudieron cargar las producciones de celofán');
-        console.error('Error fetching produccion_celofan:', error);
-        return;
+        console.error('Supabase error details (fetchProducciones):', error);
+        throw new Error(`Error al consultar produccion_celofan: ${error.message}`);
       }
-
+      console.log('Producciones fetched:', data);
       setProducciones(data || []);
+      if (!data || data.length === 0) {
+        Alert.alert('Advertencia', 'No hay producciones de celofán registradas.');
+      }
     } catch (error) {
-      console.error('Error en fetchProducciones:', error);
-      Alert.alert('Error', 'Error inesperado al cargar producciones');
+      console.error('Error en fetchProducciones:', error.message, error);
+      Alert.alert('Error', `Error al cargar producciones: ${error.message}`);
     } finally {
       setCargando(false);
     }
@@ -77,20 +78,24 @@ export default function ProduccionCelofan() {
         .order('nombre', { ascending: true });
 
       if (error) {
-        console.error('Error fetching productos:', error);
-        return;
+        console.error('Supabase error details (fetchProductos):', error);
+        throw new Error(`Error al consultar productos: ${error.message}`);
       }
-
+      console.log('Productos fetched:', data);
       setProductos(data || []);
+      if (!data || data.length === 0) {
+        Alert.alert('Advertencia', 'No hay productos de celofán registrados.');
+      }
     } catch (error) {
-      console.error('Error en fetchProductos:', error);
+      console.error('Error en fetchProductos:', error.message, error);
+      Alert.alert('Error', `Error al cargar productos: ${error.message}`);
     }
   };
 
   const produccionesFiltradas = producciones.filter(
     (p) =>
-      p.productos.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.fecha.toLowerCase().includes(busqueda.toLowerCase())
+      p.productos?.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
+      p.fecha?.toLowerCase().includes(busqueda.toLowerCase())
   );
 
   const handleChange = (campo, valor) => {
@@ -118,7 +123,6 @@ export default function ProduccionCelofan() {
     }
 
     const millaresNum = Number(millares);
-
     if (isNaN(millaresNum) || millaresNum <= 0) {
       return Alert.alert('Error', 'Los millares deben ser un número mayor a 0.');
     }
@@ -132,6 +136,7 @@ export default function ProduccionCelofan() {
         producto_id,
         millares: millaresNum,
         operador: operador.trim(),
+        updated_at: new Date().toISOString(),
       };
 
       const { error } = id
@@ -139,17 +144,16 @@ export default function ProduccionCelofan() {
         : await supabase.from('produccion_celofan').insert([dataEnviar]);
 
       if (error) {
-        Alert.alert('Error', 'No se pudo guardar la producción.');
-        console.error('Error saving produccion_celofan:', error);
-        return;
+        console.error('Supabase error details (handleGuardar):', error);
+        throw new Error(`Error al guardar producción: ${error.message}`);
       }
 
       Alert.alert('Éxito', id ? 'Producción actualizada correctamente' : 'Producción creada correctamente');
       resetForm();
       fetchProducciones();
     } catch (error) {
-      console.error('Error en handleGuardar:', error);
-      Alert.alert('Error', 'Error inesperado al guardar la producción.');
+      console.error('Error en handleGuardar:', error.message, error);
+      Alert.alert('Error', `Error al guardar la producción: ${error.message}`);
     } finally {
       setCargando(false);
     }
@@ -170,16 +174,15 @@ export default function ProduccionCelofan() {
               const { error } = await supabase.from('produccion_celofan').delete().eq('id', id);
 
               if (error) {
-                Alert.alert('Error', 'No se pudo eliminar la producción.');
-                console.error('Error deleting produccion_celofan:', error);
-                return;
+                console.error('Supabase error details (handleEliminar):', error);
+                throw new Error(`Error al eliminar producción: ${error.message}`);
               }
 
               Alert.alert('Éxito', 'Producción eliminada correctamente');
               fetchProducciones();
             } catch (error) {
-              console.error('Error en handleEliminar:', error);
-              Alert.alert('Error', 'Error inesperado al eliminar la producción.');
+              console.error('Error en handleEliminar:', error.message, error);
+              Alert.alert('Error', `Error al eliminar la producción: ${error.message}`);
             } finally {
               setCargando(false);
             }
@@ -202,7 +205,7 @@ export default function ProduccionCelofan() {
         Fecha: p.fecha,
         Turno: p.turno,
         Máquina: p.maquina,
-        Producto: p.productos.nombre,
+        Producto: p.productos?.nombre || 'N/A',
         Millares: p.millares,
         Operador: p.operador,
       }));
@@ -219,8 +222,8 @@ export default function ProduccionCelofan() {
 
       await Sharing.shareAsync(uri);
     } catch (error) {
-      console.error('Error exportando Excel:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo Excel.');
+      console.error('Error exportando Excel:', error.message, error);
+      Alert.alert('Error', `No se pudo exportar el archivo Excel: ${error.message}`);
     } finally {
       setCargandoExportar(false);
     }
@@ -269,7 +272,7 @@ export default function ProduccionCelofan() {
             <td>${p.fecha}</td>
             <td>${p.turno}</td>
             <td>${p.maquina}</td>
-            <td>${p.productos.nombre}</td>
+            <td>${p.productos?.nombre || 'N/A'}</td>
             <td>${p.millares}</td>
             <td>${p.operador}</td>
           </tr>
@@ -287,8 +290,8 @@ export default function ProduccionCelofan() {
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error) {
-      console.error('Error exportando PDF:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo PDF.');
+      console.error('Error exportando PDF:', error.message, error);
+      Alert.alert('Error', `No se pudo exportar el archivo PDF: ${error.message}`);
     } finally {
       setCargandoExportar(false);
     }
@@ -308,7 +311,7 @@ export default function ProduccionCelofan() {
   };
 
   const inputTheme = {
-    colors: { primary: '#3b82f6', text: '#fff', placeholder: '#ccc' },
+    colors: { primary: '#3b82f6', text: '#ffffff', placeholder: '#ccc' },
   };
 
   return (
@@ -320,10 +323,10 @@ export default function ProduccionCelofan() {
       <Text style={styles.title}>🏭 Producción de Celofán</Text>
 
       <View style={styles.buscador}>
-        <Ionicons name="search" size={20} color="#ccc" />
+        <Ionicons name="search" size={20} color="#ffffff" />
         <TextInput
           placeholder="Buscar por fecha o producto"
-          placeholderTextColor="#ccc"
+          placeholderTextColor="#ffffff"
           style={styles.inputText}
           value={busqueda}
           onChangeText={setBusqueda}
@@ -345,7 +348,7 @@ export default function ProduccionCelofan() {
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📊 Excel</Text>
           )}
@@ -357,7 +360,7 @@ export default function ProduccionCelofan() {
           disabled={cargandoExportar}
         >
           {cargandoExportar ? (
-            <ActivityIndicator color="#fff" size="small" />
+            <ActivityIndicator color="#ffffff" size="small" />
           ) : (
             <Text style={styles.botonTexto}>📄 PDF</Text>
           )}
@@ -390,10 +393,21 @@ export default function ProduccionCelofan() {
                   onValueChange={(value) => handleChange('turno', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar turno" value="" />
+                  <Picker.Item
+                    label="Seleccionar turno"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
                   {turnos.map((t) => (
-                    <Picker.Item key={t} label={t} value={t} />
+                    <Picker.Item
+                      key={t}
+                      label={t}
+                      value={t}
+                      style={styles.pickerItem}
+                    />
                   ))}
                 </Picker>
               </View>
@@ -421,10 +435,21 @@ export default function ProduccionCelofan() {
                   onValueChange={(value) => handleChange('producto_id', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar producto" value="" />
+                  <Picker.Item
+                    label="Seleccionar producto"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
                   {productos.map((p) => (
-                    <Picker.Item key={p.id} label={p.nombre} value={p.id} />
+                    <Picker.Item
+                      key={p.id}
+                      label={p.nombre}
+                      value={p.id}
+                      style={styles.pickerItem}
+                    />
                   ))}
                 </Picker>
               </View>
@@ -466,7 +491,7 @@ export default function ProduccionCelofan() {
               disabled={cargando}
             >
               {cargando ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
                 <Text style={styles.botonTexto}>{form.id ? 'Actualizar' : 'Guardar'}</Text>
               )}
@@ -499,7 +524,7 @@ export default function ProduccionCelofan() {
         ) : (
           produccionesFiltradas.map((p) => (
             <View key={p.id} style={styles.card}>
-              <Text style={styles.nombre}>{p.productos.nombre}</Text>
+              <Text style={styles.nombre}>{p.productos?.nombre || 'Producto no disponible'}</Text>
               <Text style={styles.info}>📅 Fecha: {p.fecha}</Text>
               <Text style={styles.info}>⏰ Turno: {p.turno}</Text>
               <Text style={styles.info}>🏭 Máquina: {p.maquina}</Text>
@@ -531,7 +556,7 @@ export default function ProduccionCelofan() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f172a', padding: 10 },
-  title: { color: '#fff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
+  title: { color: '#ffffff', fontSize: 22, fontWeight: 'bold', marginBottom: 10 },
   buscador: {
     flexDirection: 'row',
     backgroundColor: '#1e293b',
@@ -540,7 +565,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  inputText: { color: '#fff', flex: 1, paddingVertical: 10, marginLeft: 6 },
+  inputText: { color: '#ffffff', flex: 1, paddingVertical: 10, marginLeft: 6 },
   botoneraDerecha: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -580,7 +605,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  botonTexto: { color: '#fff', fontWeight: 'bold' },
+  botonTexto: { color: '#ffffff', fontWeight: 'bold' },
   formulario: {
     backgroundColor: '#1e293b',
     borderRadius: 10,
@@ -590,7 +615,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
   },
-  formTitulo: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
+  formTitulo: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
   botonesForm: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -618,7 +643,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 12,
   },
-  nombre: { fontSize: 16, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
+  nombre: { fontSize: 16, fontWeight: 'bold', color: '#ffffff', marginBottom: 8 },
   info: { color: '#cbd5e1', marginTop: 4 },
   botonesCard: {
     flexDirection: 'row',
@@ -641,16 +666,29 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     backgroundColor: '#1e293b',
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#3b82f6',
+    borderRadius: 8,
+    overflow: 'hidden',
     marginBottom: 12,
   },
   picker: {
-    color: '#fff',
+    color: '#ffffff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
+  pickerItem: {
+    color: '#ffffff',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
+  },
+  pickerItemPlaceholder: {
+    color: '#cccccc',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
   },
   label: {
-    color: '#fff',
+    color: '#ffffff',
     fontSize: 12,
     marginBottom: 4,
   },
@@ -660,7 +698,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   loadingText: {
-    color: '#fff',
+    color: '#ffffff',
     marginTop: 10,
   },
   emptyContainer: {
