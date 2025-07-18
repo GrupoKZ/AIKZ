@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npx expo export:web",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
