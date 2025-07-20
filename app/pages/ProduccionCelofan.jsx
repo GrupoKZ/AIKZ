@@ -1,3 +1,4 @@
+// app/pages/ProduccionCelofan.jsx
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import * as FileSystem from 'expo-file-system';
@@ -56,7 +57,6 @@ export default function ProduccionCelofan() {
         console.error('Supabase error details (fetchProducciones):', error);
         throw new Error(`Error al consultar produccion_celofan: ${error.message}`);
       }
-      console.log('Producciones fetched:', data);
       setProducciones(data || []);
       if (!data || data.length === 0) {
         Alert.alert('Advertencia', 'No hay producciones de celofán registradas.');
@@ -81,7 +81,6 @@ export default function ProduccionCelofan() {
         console.error('Supabase error details (fetchProductos):', error);
         throw new Error(`Error al consultar productos: ${error.message}`);
       }
-      console.log('Productos fetched:', data);
       setProductos(data || []);
       if (!data || data.length === 0) {
         Alert.alert('Advertencia', 'No hay productos de celofán registrados.');
@@ -269,12 +268,12 @@ export default function ProduccionCelofan() {
       produccionesFiltradas.forEach((p) => {
         html += `
           <tr>
-            <td>${p.fecha}</td>
-            <td>${p.turno}</td>
-            <td>${p.maquina}</td>
+            <td>${p.fecha || '-'}</td>
+            <td>${p.turno || '-'}</td>
+            <td>${p.maquina || '-'}</td>
             <td>${p.productos?.nombre || 'N/A'}</td>
-            <td>${p.millares}</td>
-            <td>${p.operador}</td>
+            <td>${p.millares || '-'}</td>
+            <td>${p.operador || '-'}</td>
           </tr>
         `;
       });
@@ -303,7 +302,7 @@ export default function ProduccionCelofan() {
       fecha: produccion.fecha,
       turno: produccion.turno,
       maquina: produccion.maquina,
-      producto_id: produccion.producto_id,
+      producto_id: produccion.producto_id.toString(),
       millares: produccion.millares.toString(),
       operador: produccion.operador,
     });
@@ -429,30 +428,44 @@ export default function ProduccionCelofan() {
             </View>
             <View style={styles.col2}>
               <Text style={styles.label}>Producto *</Text>
-              <View style={styles.pickerContainer}>
-                <Picker
-                  selectedValue={form.producto_id}
-                  onValueChange={(value) => handleChange('producto_id', value)}
-                  style={styles.picker}
-                  enabled={!cargando}
-                  mode="dropdown"
-                  dropdownIconColor="#ffffff"
-                >
-                  <Picker.Item
-                    label="Seleccionar producto"
-                    value=""
-                    style={styles.pickerItemPlaceholder}
-                  />
-                  {productos.map((p) => (
-                    <Picker.Item
-                      key={p.id}
-                      label={p.nombre}
-                      value={p.id}
-                      style={styles.pickerItem}
-                    />
-                  ))}
-                </Picker>
-              </View>
+<View style={styles.pickerContainer}>
+  <Picker
+    selectedValue={form.producto_id}
+    onValueChange={(value) => handleChange('producto_id', value)}
+    style={styles.picker}
+    enabled={!cargando}
+    mode="dropdown"
+    dropdownIconColor="#ffffff"
+  >
+    <Picker.Item
+      label="Seleccionar producto"
+      value=""
+      style={styles.pickerItemPlaceholder}
+    />
+    {productos.length > 0 ? (
+      productos.map((p) => (
+        <Picker.Item
+          key={p.id}
+          label={p.nombre}
+          value={p.id.toString()}
+          style={styles.pickerItem}
+        />
+      ))
+    ) : cargando ? (
+      <Picker.Item
+        label="Cargando productos..."
+        value=""
+        style={styles.pickerItemPlaceholder}
+      />
+    ) : (
+      <Picker.Item
+        label="No hay productos disponibles"
+        value=""
+        style={styles.pickerItemPlaceholder}
+      />
+    )}
+  </Picker>
+</View>
             </View>
           </View>
 
@@ -525,11 +538,11 @@ export default function ProduccionCelofan() {
           produccionesFiltradas.map((p) => (
             <View key={p.id} style={styles.card}>
               <Text style={styles.nombre}>{p.productos?.nombre || 'Producto no disponible'}</Text>
-              <Text style={styles.info}>📅 Fecha: {p.fecha}</Text>
-              <Text style={styles.info}>⏰ Turno: {p.turno}</Text>
-              <Text style={styles.info}>🏭 Máquina: {p.maquina}</Text>
-              <Text style={styles.info}>📦 Millares: {p.millares}</Text>
-              <Text style={styles.info}>👷 Operador: {p.operador}</Text>
+              <Text style={styles.info}>📅 Fecha: {p.fecha || '-'}</Text>
+              <Text style={styles.info}>⏰ Turno: {p.turno || '-'}</Text>
+              <Text style={styles.info}>🏭 Máquina: {p.maquina || '-'}</Text>
+              <Text style={styles.info}>📦 Millares: {p.millares || '-'}</Text>
+              <Text style={styles.info}>👷 Operador: {p.operador || '-'}</Text>
               <View style={styles.botonesCard}>
                 <TouchableOpacity
                   onPress={() => editarProduccion(p)}

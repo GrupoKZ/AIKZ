@@ -60,6 +60,9 @@ export default function ProduccionPolietileno() {
       }
 
       setProducciones(data || []);
+      if (!data || data.length === 0) {
+        Alert.alert('Advertencia', 'No hay producciones de polietileno registradas.');
+      }
     } catch (error) {
       console.error('Error en fetchProducciones:', error);
       Alert.alert('Error', 'Error inesperado al cargar producciones');
@@ -78,19 +81,25 @@ export default function ProduccionPolietileno() {
 
       if (error) {
         console.error('Error fetching productos:', error);
+        Alert.alert('Error', 'No se pudieron cargar los productos de polietileno');
         return;
       }
 
+      console.log('Productos fetched:', data); // Para depuración
       setProductos(data || []);
+      if (!data || data.length === 0) {
+        Alert.alert('Advertencia', 'No hay productos de polietileno registrados.');
+      }
     } catch (error) {
       console.error('Error en fetchProductos:', error);
+      Alert.alert('Error', 'Error inesperado al cargar productos');
     }
   };
 
   const produccionesFiltradas = producciones.filter(
     (p) =>
-      p.productos.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.fecha.toLowerCase().includes(busqueda.toLowerCase())
+      p.productos?.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
+      p.fecha?.toLowerCase().includes(busqueda.toLowerCase())
   );
 
   const handleChange = (campo, valor) => {
@@ -118,7 +127,6 @@ export default function ProduccionPolietileno() {
     }
 
     const kilosNum = Number(kilos);
-
     if (isNaN(kilosNum) || kilosNum <= 0) {
       return Alert.alert('Error', 'Los kilos deben ser un número mayor a 0.');
     }
@@ -202,7 +210,7 @@ export default function ProduccionPolietileno() {
         Fecha: p.fecha,
         Turno: p.turno,
         Máquina: p.maquina,
-        Producto: p.productos.nombre,
+        Producto: p.productos?.nombre || 'N/A',
         Kilos: p.kilos,
         Operador: p.operador,
       }));
@@ -266,12 +274,12 @@ export default function ProduccionPolietileno() {
       produccionesFiltradas.forEach((p) => {
         html += `
           <tr>
-            <td>${p.fecha}</td>
-            <td>${p.turno}</td>
-            <td>${p.maquina}</td>
-            <td>${p.productos.nombre}</td>
-            <td>${p.kilos}</td>
-            <td>${p.operador}</td>
+            <td>${p.fecha || '-'}</td>
+            <td>${p.turno || '-'}</td>
+            <td>${p.maquina || '-'}</td>
+            <td>${p.productos?.nombre || 'N/A'}</td>
+            <td>${p.kilos || '-'}</td>
+            <td>${p.operador || '-'}</td>
           </tr>
         `;
       });
@@ -300,7 +308,7 @@ export default function ProduccionPolietileno() {
       fecha: produccion.fecha,
       turno: produccion.turno,
       maquina: produccion.maquina,
-      producto_id: produccion.producto_id,
+      producto_id: produccion.producto_id.toString(),
       kilos: produccion.kilos.toString(),
       operador: produccion.operador,
     });
@@ -390,10 +398,21 @@ export default function ProduccionPolietileno() {
                   onValueChange={(value) => handleChange('turno', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar turno" value="" />
+                  <Picker.Item
+                    label="Seleccionar turno"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
                   {turnos.map((t) => (
-                    <Picker.Item key={t} label={t} value={t} />
+                    <Picker.Item
+                      key={t}
+                      label={t}
+                      value={t}
+                      style={styles.pickerItem}
+                    />
                   ))}
                 </Picker>
               </View>
@@ -421,11 +440,36 @@ export default function ProduccionPolietileno() {
                   onValueChange={(value) => handleChange('producto_id', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar producto" value="" />
-                  {productos.map((p) => (
-                    <Picker.Item key={p.id} label={p.nombre} value={p.id} />
-                  ))}
+                  <Picker.Item
+                    label="Seleccionar producto"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
+                  {productos.length > 0 ? (
+                    productos.map((p) => (
+                      <Picker.Item
+                        key={p.id}
+                        label={p.nombre}
+                        value={p.id.toString()}
+                        style={styles.pickerItem}
+                      />
+                    ))
+                  ) : cargando ? (
+                    <Picker.Item
+                      label="Cargando productos..."
+                      value=""
+                      style={styles.pickerItemPlaceholder}
+                    />
+                  ) : (
+                    <Picker.Item
+                      label="No hay productos disponibles"
+                      value=""
+                      style={styles.pickerItemPlaceholder}
+                    />
+                  )}
                 </Picker>
               </View>
             </View>
@@ -499,12 +543,12 @@ export default function ProduccionPolietileno() {
         ) : (
           produccionesFiltradas.map((p) => (
             <View key={p.id} style={styles.card}>
-              <Text style={styles.nombre}>{p.productos.nombre}</Text>
-              <Text style={styles.info}>📅 Fecha: {p.fecha}</Text>
-              <Text style={styles.info}>⏰ Turno: {p.turno}</Text>
-              <Text style={styles.info}>🏭 Máquina: {p.maquina}</Text>
-              <Text style={styles.info}>📦 Kilos: {p.kilos}</Text>
-              <Text style={styles.info}>👷 Operador: {p.operador}</Text>
+              <Text style={styles.nombre}>{p.productos?.nombre || 'Producto no disponible'}</Text>
+              <Text style={styles.info}>📅 Fecha: {p.fecha || '-'}</Text>
+              <Text style={styles.info}>⏰ Turno: {p.turno || '-'}</Text>
+              <Text style={styles.info}>🏭 Máquina: {p.maquina || '-'}</Text>
+              <Text style={styles.info}>📦 Kilos: {p.kilos || '-'}</Text>
+              <Text style={styles.info}>👷 Operador: {p.operador || '-'}</Text>
               <View style={styles.botonesCard}>
                 <TouchableOpacity
                   onPress={() => editarProduccion(p)}
@@ -641,13 +685,26 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     backgroundColor: '#1e293b',
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#3b82f6',
+    borderRadius: 8,
+    overflow: 'hidden',
     marginBottom: 12,
   },
   picker: {
     color: '#fff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
+  pickerItemPlaceholder: {
+    color: '#ccc',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
+  },
+  pickerItem: {
+    color: '#fff',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
   },
   label: {
     color: '#fff',

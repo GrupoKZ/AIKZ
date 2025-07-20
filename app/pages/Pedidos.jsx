@@ -20,51 +20,53 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
 
 export default function Pedidos() {
+  // Estados principales
   const [pedidos, setPedidos] = useState([]);
-  const [notasVenta, setNotasVenta] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [productos, setProductos] = useState([]);
-  const [entregas, setEntregas] = useState([]);
   const [vendedores, setVendedores] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarDetalles, setMostrarDetalles] = useState(null);
+  const [mostrarFormularioProducto, setMostrarFormularioProducto] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [cargandoExportar, setCargandoExportar] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [mostrarDetalles, setMostrarDetalles] = useState(null);
+  const [aplicarIva, setAplicarIva] = useState(true);
+
+  // Estados de formularios
   const [form, setForm] = useState({
     id: null,
     notas_venta_id: '',
     cliente_id: '',
     productos_id: '',
     cantidad: '',
-    precio_unitario_sin_iva: '',
-    precio_unitario_con_iva: '',
-    subtotal: '',
     fecha: new Date().toISOString().split('T')[0],
     folio: '',
     vendedor_id: '',
-    status: 'Pendiente',
-    pago_pendiente: '',
     abono: '',
-    descuento: '',
+    descuento: '0',
   });
+
   const [detalleForm, setDetalleForm] = useState({
-    pedido_id: null,
     productos_id: '',
     cantidad: '',
-    descuento: '',
   });
+
   const [productosSeleccionados, setProductosSeleccionados] = useState([]);
 
   useEffect(() => {
-    fetchPedidos();
-    fetchNotasVenta();
-    fetchClientes();
-    fetchProductos();
-    fetchEntregas();
-    fetchVendedores();
+    fetchDatos();
   }, []);
+
+  const fetchDatos = async () => {
+    await Promise.all([
+      fetchPedidos(),
+      fetchClientes(),
+      fetchProductos(),
+      fetchVendedores()
+    ]);
+  };
 
   const fetchPedidos = async () => {
     try {
@@ -79,6 +81,10 @@ export default function Pedidos() {
             fecha,
             cliente_id,
             pago_pendiente,
+            subtotal,
+            iva,
+            total,
+            descuento,
             clientes!inner(
               id,
               nombre_contacto,
@@ -104,53 +110,18 @@ export default function Pedidos() {
         `)
         .order('id', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching pedidos:', error.message);
-        Alert.alert('Error', 'No se pudieron cargar los pedidos: ' + error.message);
-        return;
-      }
+      if (error) throw error;
 
-      // Filtrar registros que tengan todas las relaciones necesarias
       const pedidosValidos = (data || []).filter(pedido => 
-        pedido && 
-        pedido.notas_venta && 
-        pedido.notas_venta.clientes && 
-        pedido.productos
+        pedido?.notas_venta?.clientes && pedido?.productos
       );
 
       setPedidos(pedidosValidos);
     } catch (error) {
-      console.error('Error en fetchPedidos:', error.message);
-      Alert.alert('Error', 'Error inesperado al cargar pedidos: ' + error.message);
+      console.error('Error en fetchPedidos:', error);
+      Alert.alert('Error', 'Error al cargar pedidos: ' + error.message);
     } finally {
       setCargando(false);
-    }
-  };
-
-  const fetchNotasVenta = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('notas_venta')
-        .select(`
-          id, 
-          folio, 
-          fecha, 
-          cliente_id, 
-          pago_pendiente,
-          clientes!inner(
-            nombre_contacto, 
-            vendedor_id
-          )
-        `)
-        .order('folio', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching notas_venta:', error.message);
-        return;
-      }
-      setNotasVenta(data || []);
-    } catch (error) {
-      console.error('Error en fetchNotasVenta:', error.message);
     }
   };
 
@@ -161,13 +132,10 @@ export default function Pedidos() {
         .select('id, nombre_contacto, empresa, vendedor_id')
         .order('nombre_contacto', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching clientes:', error.message);
-        return;
-      }
+      if (error) throw error;
       setClientes(data || []);
     } catch (error) {
-      console.error('Error en fetchClientes:', error.message);
+      console.error('Error en fetchClientes:', error);
     }
   };
 
@@ -178,30 +146,10 @@ export default function Pedidos() {
         .select('id, nombre, material, tipo, ancho_cm, largo_cm, micraje_um')
         .order('nombre', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching productos:', error.message);
-        return;
-      }
+      if (error) throw error;
       setProductos(data || []);
     } catch (error) {
-      console.error('Error en fetchProductos:', error.message);
-    }
-  };
-
-  const fetchEntregas = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('entregas')
-        .select('id, pedido_id, cantidad, unidades, fecha_entrega')
-        .order('fecha_entrega', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching entregas:', error.message);
-        return;
-      }
-      setEntregas(data || []);
-    } catch (error) {
-      console.error('Error en fetchEntregas:', error.message);
+      console.error('Error en fetchProductos:', error);
     }
   };
 
@@ -212,85 +160,68 @@ export default function Pedidos() {
         .select('id, nombre')
         .order('nombre', { ascending: true });
 
-      if (error) {
-        console.error('Error fetching vendedores:', error.message);
-        return;
-      }
+      if (error) throw error;
       setVendedores(data || []);
     } catch (error) {
-      console.error('Error en fetchVendedores:', error.message);
+      console.error('Error en fetchVendedores:', error);
     }
   };
 
-  // Filtro seguro para pedidos
+  // Filtros y cálculos
   const pedidosFiltrados = pedidos.filter((p) => {
-    if (!p || !p.productos || !p.notas_venta) return false;
+    if (!p?.productos || !p?.notas_venta) return false;
     
-    const productoNombre = p.productos.nombre || '';
-    const notaFolio = p.notas_venta.folio || '';
-    const busquedaLower = busqueda.toLowerCase();
+    const searchTerms = [
+      p.productos.nombre,
+      p.notas_venta.folio,
+      p.notas_venta.clientes.nombre_contacto
+    ].join(' ').toLowerCase();
     
-    return (
-      productoNombre.toLowerCase().includes(busquedaLower) ||
-      notaFolio.toLowerCase().includes(busquedaLower)
-    );
+    return searchTerms.includes(busqueda.toLowerCase());
   });
 
-  const handleChange = (campo, valor) => {
-    let newValue = valor;
-    // Remove leading zero if a new number is entered
-    if (campo !== 'folio' && newValue && !isNaN(newValue) && newValue.length > 1 && newValue.startsWith('0') && !newValue.startsWith('0.')) {
-      newValue = newValue.replace(/^0+/, '');
+  const calculateSubtotal = (cantidad, productos_id) => {
+    const cantidadNum = Number(cantidad || '0');
+    const producto = productos.find((p) => p.id === Number(productos_id || ''));
+    if (!producto || cantidadNum <= 0) {
+      return {
+        precio_unitario_sin_iva: '0',
+        precio_unitario_con_iva: '0',
+        subtotal: '0',
+      };
     }
-    setForm((prev) => ({ ...prev, [campo]: newValue }));
+
+    // Cálculo del precio base según material
+    let precioPorKilo = 50;
+    if (producto.material === 'CELOFAN') precioPorKilo = 45;
+    else if (producto.material === 'POLIETILENO') precioPorKilo = 35;
+
+    // Calcular peso según material
+    let pesoKg = 0;
+    if (producto.material === 'CELOFAN') {
+      pesoKg = (producto.largo_cm * producto.ancho_cm * 2 * producto.micraje_um) / 10000 * cantidadNum / 1000;
+    } else if (producto.material === 'POLIETILENO') {
+      pesoKg = cantidadNum;
+    }
+
+    const precioBase = pesoKg * precioPorKilo;
+    const precioSinIva = precioBase;
+    const precioConIva = aplicarIva ? precioSinIva * 1.16 : precioSinIva;
+
+    return {
+      precio_unitario_sin_iva: precioSinIva.toFixed(2),
+      precio_unitario_con_iva: precioConIva.toFixed(2),
+      subtotal: precioConIva.toFixed(2),
+    };
+  };
+
+  // Manejadores de eventos
+  const handleChange = (campo, valor) => {
+    setForm((prev) => ({ ...prev, [campo]: valor }));
   };
 
   const handleDetalleChange = (campo, valor) => {
-    let newValue = valor;
-    // Remove leading zero if a new number is entered
-    if (campo !== 'pedido_id' && newValue && !isNaN(newValue) && newValue.length > 1 && newValue.startsWith('0') && !newValue.startsWith('0.')) {
-      newValue = newValue.replace(/^0+/, '');
-    }
-    setDetalleForm((prev) => ({ ...prev, [campo]: newValue }));
-  };
-
-  const calculateSubtotal = (cantidad, productos_id, descuento = '0') => {
-    const cantidadNum = Number(cantidad || '0');
-    const producto = productos.find((p) => p.id === Number(productos_id || ''));
-    const descuentoNum = Number(descuento || '0');
-    const precioPorKilo = 1; // Placeholder; replace with actual value from database
-
-    if (producto && cantidadNum > 0) {
-      let kgm = 0;
-      if (producto.tipo === 'MORDAZA') {
-        kgm = (((producto.largo_cm * (producto.ancho_cm + 2)) * 2 * producto.micraje_um) / 10000) * precioPorKilo;
-      } else if (producto.tipo === 'LATERAL') {
-        kgm = (((producto.largo_cm * producto.ancho_cm) * 2 * producto.micraje_um) / 10000) * precioPorKilo;
-      } else if (producto.tipo === 'PEGOL') {
-        kgm = (((producto.largo_cm * (producto.ancho_cm + 3)) * 2 * producto.micraje_um) / 10000) * precioPorKilo + (producto.largo_cm * 0.12) + 13;
-      } else if (producto.tipo === 'CENEFA + PEGOL') {
-        kgm = (((producto.largo_cm * (producto.ancho_cm + 6)) * 2 * producto.micraje_um) / 10000) * precioPorKilo + (producto.largo_cm * 0.21) + 20;
-      } else if (producto.material === 'POLIETILENO') {
-        kgm = precioPorKilo;
-      }
-
-      const precioBase = kgm;
-      const precioConIva = precioBase * 1.16;
-      const subtotalSinDescuento = cantidadNum * precioConIva;
-      const descuentoTotal = (subtotalSinDescuento * descuentoNum) / 100;
-      const subtotal = subtotalSinDescuento - descuentoTotal;
-
-      return {
-        precio_unitario_sin_iva: precioBase.toString(),
-        precio_unitario_con_iva: precioConIva.toString(),
-        subtotal: subtotal.toString(),
-      };
-    }
-    return {
-      precio_unitario_sin_iva: '0',
-      precio_unitario_con_iva: '0',
-      subtotal: '0',
-    };
+    setDetalleForm((prev) => ({ ...prev, [campo]: valor }));
   };
 
   const handleDateChange = (event, selectedDate) => {
@@ -301,6 +232,7 @@ export default function Pedidos() {
     }
   };
 
+  // Funciones de reset
   const resetForm = () => {
     setForm({
       id: null,
@@ -308,171 +240,163 @@ export default function Pedidos() {
       cliente_id: '',
       productos_id: '',
       cantidad: '',
-      precio_unitario_sin_iva: '',
-      precio_unitario_con_iva: '',
-      subtotal: '',
       fecha: new Date().toISOString().split('T')[0],
       folio: '',
       vendedor_id: '',
-      status: 'Pendiente',
-      pago_pendiente: '',
       abono: '',
-      descuento: '',
+      descuento: '0',
     });
     setMostrarFormulario(false);
+    setAplicarIva(true);
+    setProductosSeleccionados([]);
+    setMostrarFormularioProducto(false);
+    resetDetalleForm();
   };
 
   const resetDetalleForm = () => {
     setDetalleForm({
-      pedido_id: null,
       productos_id: '',
       cantidad: '',
-      descuento: '',
     });
-    setProductosSeleccionados([]);
   };
 
+  // CRUD Operations
   const handleGuardar = async () => {
-    const { notas_venta_id, cliente_id, productos_id, cantidad, precio_unitario_sin_iva, precio_unitario_con_iva, subtotal, fecha, folio, vendedor_id, status, id, abono, pago_pendiente, descuento } = form;
+    const { cliente_id, productos_id, cantidad, fecha, vendedor_id, id, abono } = form;
 
-    if (!folio || !cliente_id || !fecha || !vendedor_id) {
-      console.log('Validation failed:', { folio, cliente_id, fecha, vendedor_id });
-      return Alert.alert('Campos requeridos', 'Folio, cliente, fecha y vendedor son obligatorios.');
+    if (!cliente_id || !fecha || !vendedor_id) {
+      return Alert.alert('Campos requeridos', 'Cliente, fecha y vendedor son obligatorios.');
     }
 
     const cantidadNum = Number(cantidad) || 0;
-    const precioSinIvaNum = Number(precio_unitario_sin_iva) || 0;
-    const precioConIvaNum = Number(precio_unitario_con_iva) || 0;
-    const subtotalNum = Number(subtotal) || 0;
     const abonoNum = Number(abono) || 0;
-    const pagoPendienteNum = Number(pago_pendiente) || 0;
-    const descuentoNum = Number(descuento) || 0;
 
-    if ((cantidadNum <= 0 && productosSeleccionados.length === 0) || isNaN(cantidadNum)) {
-      console.log('Cantidad validation failed:', cantidadNum, productosSeleccionados.length);
-      return Alert.alert('Error', 'La cantidad debe ser un número mayor a 0 si hay productos.');
-    }
-    if (precioSinIvaNum < 0 || isNaN(precioSinIvaNum)) {
-      console.log('Precio sin IVA validation failed:', precioSinIvaNum);
-      return Alert.alert('Error', 'El precio sin IVA debe ser un número válido.');
-    }
-    if (precioConIvaNum < 0 || isNaN(precioConIvaNum)) {
-      console.log('Precio con IVA validation failed:', precioConIvaNum);
-      return Alert.alert('Error', 'El precio con IVA debe ser un número válido.');
-    }
-    if (subtotalNum < 0 || isNaN(subtotalNum)) {
-      console.log('Subtotal validation failed:', subtotalNum);
-      return Alert.alert('Error', 'El subtotal debe ser un número válido.');
-    }
-    if (abonoNum < 0 || isNaN(abonoNum)) {
-      console.log('Abono validation failed:', abonoNum);
-      return Alert.alert('Error', 'El abono debe ser un número válido.');
-    }
-    if (pagoPendienteNum < 0 || isNaN(pagoPendienteNum)) {
-      console.log('Pago pendiente validation failed:', pagoPendienteNum);
-      return Alert.alert('Error', 'El pago pendiente debe ser un número válido.');
-    }
-    if (descuentoNum < 0 || isNaN(descuentoNum)) {
-      console.log('Descuento validation failed:', descuentoNum);
-      return Alert.alert('Error', 'El descuento debe ser un número válido.');
+    if (cantidadNum <= 0 && productosSeleccionados.length === 0) {
+      return Alert.alert('Error', 'Debe agregar al menos un producto.');
     }
 
     try {
       setCargando(true);
+      
+      // Calcular totales
+      let subtotalTotal = 0;
+      
+      if (productosSeleccionados.length > 0) {
+        subtotalTotal = productosSeleccionados.reduce((acc, p) => acc + Number(p.subtotal || 0), 0);
+      }
+      
+      if (productos_id && cantidadNum > 0) {
+        const { subtotal } = calculateSubtotal(cantidad, productos_id);
+        subtotalTotal += Number(subtotal);
+      }
+
+      const ivaTotal = aplicarIva ? subtotalTotal * 0.16 : 0;
+      const totalFinal = subtotalTotal + ivaTotal;
+
+      // Crear nota de venta
       const notaVentaData = {
-        folio,
+        folio: id || Date.now().toString(), // Use id if editing, otherwise a unique timestamp
         fecha,
-        cliente_id,
-        subtotal: subtotalNum,
-        iva: (subtotalNum - (subtotalNum / 1.16)).toFixed(2),
-        total: subtotalNum,
-        pago_pendiente: pagoPendienteNum,
-        descuento: descuentoNum,
+        cliente_id: Number(cliente_id),
+        subtotal: subtotalTotal,
+        iva: ivaTotal,
+        total: totalFinal,
+        pago_pendiente: totalFinal - abonoNum,
+        descuento: '0',
       };
+
       let notaVentaId;
       if (!id) {
         const { data: notaData, error: notaError } = await supabase
           .from('notas_venta')
           .insert([notaVentaData])
           .select('id');
-        if (notaError) {
-          console.error('Error inserting nota_venta:', notaError.message);
-          throw notaError;
-        }
+        
+        if (notaError) throw notaError;
         notaVentaId = notaData[0].id;
       } else {
-        notaVentaId = notas_venta_id;
-        const { error: notaUpdateError } = await supabase.from('notas_venta').update(notaVentaData).eq('id', notaVentaId);
-        if (notaUpdateError) {
-          console.error('Error updating nota_venta:', notaUpdateError.message);
-          throw notaUpdateError;
-        }
+        notaVentaId = form.notas_venta_id;
+        const { error: notaUpdateError } = await supabase
+          .from('notas_venta')
+          .update(notaVentaData)
+          .eq('id', notaVentaId);
+        
+        if (notaUpdateError) throw notaUpdateError;
       }
 
+      // Actualizar vendedor del cliente
       const cliente = clientes.find((c) => c.id === Number(cliente_id));
       if (cliente && cliente.vendedor_id !== Number(vendedor_id)) {
-        const { error: clienteUpdateError } = await supabase.from('clientes').update({ vendedor_id }).eq('id', cliente_id);
-        if (clienteUpdateError) {
-          console.error('Error updating cliente:', clienteUpdateError.message);
-          throw clienteUpdateError;
-        }
+        await supabase
+          .from('clientes')
+          .update({ vendedor_id: Number(vendedor_id) })
+          .eq('id', cliente_id);
       }
 
+      // Insertar productos
+      const todosProductos = [];
+      
       if (productosSeleccionados.length > 0) {
-        const pedidosData = productosSeleccionados.map((p) => ({
+        todosProductos.push(...productosSeleccionados.map((p) => ({
           notas_venta_id: notaVentaId,
-          productos_id: p.productos_id,
+          productos_id: Number(p.productos_id),
           cantidad: Number(p.cantidad),
-          precio_kilo_venta: Number(p.precio_unitario_sin_iva) / ((Number(p.cantidad) * 25) / 10000),
+          precio_kilo_venta: Number(p.precio_unitario_sin_iva),
           precio_venta: Number(p.precio_unitario_sin_iva),
-          price_iva: Number(p.precio_unitario_con_iva),
-        }));
-        const { error: pedidosInsertError } = await supabase.from('pedidos').insert(pedidosData);
-        if (pedidosInsertError) {
-          console.error('Error inserting pedidos:', pedidosInsertError.message);
-          throw pedidosInsertError;
-        }
-      } else if (productos_id && cantidadNum > 0) {
-        const dataEnviar = {
+          precio_iva: Number(p.precio_unitario_con_iva),
+        })));
+      }
+
+      if (productos_id && cantidadNum > 0) {
+        const { precio_unitario_sin_iva, precio_unitario_con_iva } = calculateSubtotal(cantidad, productos_id);
+        
+        todosProductos.push({
           notas_venta_id: notaVentaId,
-          productos_id,
+          productos_id: Number(productos_id),
           cantidad: cantidadNum,
-          precio_kilo_venta: precioSinIvaNum / ((cantidadNum * 25) / 10000),
-          precio_venta: precioSinIvaNum,
-          precio_iva: precioConIvaNum,
-        };
-        const { error } = id
-          ? await supabase.from('pedidos').update(dataEnviar).eq('id', id)
-          : await supabase.from('pedidos').insert([dataEnviar]);
-        if (error) {
-          console.error('Error saving pedido:', error.message);
-          throw error;
+          precio_kilo_venta: Number(precio_unitario_sin_iva),
+          precio_venta: Number(precio_unitario_sin_iva),
+          precio_iva: Number(precio_unitario_con_iva),
+        });
+      }
+
+      if (todosProductos.length > 0) {
+        if (id) {
+          // Actualizar pedido existente
+          const { error } = await supabase
+            .from('pedidos')
+            .update(todosProductos[0])
+            .eq('id', id);
+          if (error) throw error;
+        } else {
+          // Insertar nuevos pedidos
+          const { data: pedidoData, error } = await supabase
+            .from('pedidos')
+            .insert(todosProductos)
+            .select('id');
+          if (error) throw error;
+          setForm((prev) => ({ ...prev, id: pedidoData[0].id, folio: pedidoData[0].id.toString() }));
         }
       }
 
-      const entregaData = { pedido_id: id || null, cantidad: cantidadNum, unidades: 'millares', fecha_entrega: status === 'Entregado' ? new Date().toISOString().split('T')[0] : null };
-      if (!id && productosSeleccionados.length > 0) {
-        await supabase.from('entregas').insert([{ ...entregaData, pedido_id: null }]); // Adjust logic for multiple products
-      } else if (!id) {
-        const { error: entregaInsertError } = await supabase.from('entregas').insert([entregaData]);
-        if (entregaInsertError) {
-          console.error('Error inserting entrega:', entregaInsertError.message);
-          throw entregaInsertError;
-        }
-      } else {
-        const { error: entregaUpdateError } = await supabase.from('entregas').update(entregaData).eq('pedido_id', id);
-        if (entregaUpdateError) {
-          console.error('Error updating entrega:', entregaUpdateError.message);
-          throw entregaUpdateError;
-        }
+      // Registrar pago inicial si hay abono
+      if (abonoNum > 0) {
+        await supabase
+          .from('pagos')
+          .insert([{
+            notas_venta_id: notaVentaId,
+            fecha: new Date().toISOString().split('T')[0],
+            importe: abonoNum,
+            cliente_id: Number(cliente_id)
+          }]);
       }
 
       Alert.alert('Éxito', id ? 'Pedido actualizado correctamente' : 'Pedido creado correctamente');
       resetForm();
       fetchPedidos();
     } catch (error) {
-      console.error('Error en handleGuardar:', error.message);
-      Alert.alert('Error', 'Error inesperado al guardar el pedido: ' + error.message);
+      console.error('Error en handleGuardar:', error);
+      Alert.alert('Error', 'Error al guardar el pedido: ' + error.message);
     } finally {
       setCargando(false);
     }
@@ -481,7 +405,7 @@ export default function Pedidos() {
   const handleEliminar = async (id) => {
     Alert.alert(
       'Confirmar eliminación',
-      '¿Estás seguro de que deseas eliminar este pedido? Esto puede afectar entregas asociadas.',
+      '¿Estás seguro de que deseas eliminar este pedido?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -490,22 +414,16 @@ export default function Pedidos() {
           onPress: async () => {
             try {
               setCargando(true);
-              const pedido = pedidos.find((p) => p.id === id);
-              const { error: pedidoError } = await supabase.from('pedidos').delete().eq('id', id);
-              const { error: entregaError } = await supabase.from('entregas').delete().eq('pedido_id', id);
-              const { error: notaError } = await supabase.from('notas_venta').delete().eq('id', pedido.notas_venta_id);
+              
+              await supabase.from('entregas').delete().eq('pedido_id', id);
+              const { error } = await supabase.from('pedidos').delete().eq('id', id);
 
-              if (pedidoError || entregaError || notaError) {
-                console.error('Deletion errors:', { pedidoError, entregaError, notaError });
-                Alert.alert('Error', 'No se pudo eliminar el pedido o datos relacionados.');
-                return;
-              }
+              if (error) throw error;
 
               Alert.alert('Éxito', 'Pedido eliminado correctamente');
               fetchPedidos();
             } catch (error) {
-              console.error('Error en handleEliminar:', error.message);
-              Alert.alert('Error', 'Error inesperado al eliminar el pedido: ' + error.message);
+              Alert.alert('Error', 'Error al eliminar el pedido: ' + error.message);
             } finally {
               setCargando(false);
             }
@@ -516,34 +434,26 @@ export default function Pedidos() {
   };
 
   const handleEntregar = async (id) => {
-    const pedido = pedidos.find((p) => p.id === id);
-    const entregaData = { pedido_id: id, cantidad: pedido.cantidad, unidades: pedido.unidades || 'millares', fecha_entrega: new Date().toISOString().split('T')[0] };
-
     try {
       setCargando(true);
+      const pedido = pedidos.find((p) => p.id === id);
+      
+      const entregaData = { 
+        pedido_id: id, 
+        cantidad: pedido.cantidad, 
+        unidades: 'millares', 
+        fecha_entrega: new Date().toISOString().split('T')[0] 
+      };
+
       const { error } = await supabase
         .from('entregas')
         .upsert(entregaData, { onConflict: 'pedido_id' });
 
-      if (error) {
-        console.error('Error en handleEntregar upsert:', error.message);
-        throw error;
-      }
-
-      const { error: statusError } = await supabase
-        .from('pedidos')
-        .update({ status: 'Entregado' })
-        .eq('id', id);
-
-      if (statusError) {
-        console.error('Error updating status:', statusError.message);
-        throw statusError;
-      }
+      if (error) throw error;
 
       Alert.alert('Éxito', 'Pedido marcado como entregado');
       fetchPedidos();
     } catch (error) {
-      console.error('Error en handleEntregar:', error.message);
       Alert.alert('Error', 'Error al marcar como entregado: ' + error.message);
     } finally {
       setCargando(false);
@@ -551,110 +461,107 @@ export default function Pedidos() {
   };
 
   const handleAbonar = async (id) => {
-    const abonoNum = Number(form.abono) || 0;
-    const pedido = pedidos.find((p) => p.id === id);
-    
-    if (!pedido || !pedido.notas_venta) {
-      return Alert.alert('Error', 'No se pudo encontrar la información del pedido.');
-    }
+  // Use window.prompt for web compatibility
+  const abonoStr = window.prompt('Ingrese el monto del abono:', '');
+  if (!abonoStr) return;
 
+  const abonoNum = Number(abonoStr) || 0;
+  const pedido = pedidos.find((p) => p.id === id);
+  
+  if (!pedido?.notas_venta) {
+    return Alert.alert('Error', 'No se pudo encontrar la información del pedido.');
+  }
+
+  if (abonoNum <= 0 || abonoNum > pedido.notas_venta.pago_pendiente) {
+    return Alert.alert('Error', 'El abono debe ser mayor a 0 y menor al pago pendiente.');
+  }
+
+  try {
+    setCargando(true);
     const nuevoPagoPendiente = pedido.notas_venta.pago_pendiente - abonoNum;
+    
+    // Actualizar pago pendiente
+    await supabase
+      .from('notas_venta')
+      .update({ pago_pendiente: nuevoPagoPendiente })
+      .eq('id', pedido.notas_venta_id);
 
-    if (abonoNum <= 0 || isNaN(abonoNum)) {
-      console.log('Abono validation failed:', abonoNum);
-      return Alert.alert('Error', 'El abono debe ser un número mayor a 0.');
-    }
-    if (abonoNum > pedido.notas_venta.pago_pendiente) {
-      console.log('Abono exceeds payment pending:', { abonoNum, pagoPendiente: pedido.notas_venta.pago_pendiente });
-      return Alert.alert('Error', 'El abono no puede exceder el pago pendiente.');
-    }
+    // Registrar el pago
+    await supabase
+      .from('pagos')
+      .insert([{
+        notas_venta_id: pedido.notas_venta_id,
+        fecha: new Date().toISOString().split('T')[0],
+        importe: abonoNum,
+        cliente_id: pedido.notas_venta.cliente_id
+      }]);
 
-    try {
-      setCargando(true);
-      const { error } = await supabase
-        .from('notas_venta')
-        .update({ pago_pendiente: nuevoPagoPendiente })
-        .eq('id', pedido.notas_venta_id);
-
-      if (error) {
-        console.error('Error en handleAbonar:', error.message);
-        throw error;
-      }
-
-      Alert.alert('Éxito', 'Abono registrado correctamente');
-      resetForm();
-      fetchPedidos();
-    } catch (error) {
-      console.error('Error en handleAbonar:', error.message);
-      Alert.alert('Error', 'Error al registrar el abono: ' + error.message);
-    } finally {
-      setCargando(false);
-    }
-  };
+    Alert.alert('Éxito', 'Abono registrado correctamente');
+    fetchPedidos();
+  } catch (error) {
+    Alert.alert('Error', 'Error al registrar el abono: ' + error.message);
+  } finally {
+    setCargando(false);
+  }
+};
 
   const handleAñadirProducto = () => {
-    const { productos_id, cantidad, descuento } = detalleForm;
+    const { productos_id, cantidad } = detalleForm;
 
-    if (!productos_id || !cantidad) {
-      console.log('Required fields missing:', { productos_id, cantidad });
-      return Alert.alert('Campos requeridos', 'Debe seleccionar un producto y especificar una cantidad.');
+    if (!productos_id || !cantidad || Number(cantidad) <= 0) {
+      return Alert.alert('Error', 'Debe seleccionar un producto y especificar una cantidad válida.');
     }
 
-    const cantidadNum = Number(cantidad) || 0;
-    const descuentoNum = Number(descuento) || 0;
-    if (cantidadNum <= 0 || isNaN(cantidadNum)) {
-      console.log('Cantidad validation failed:', cantidadNum);
-      return Alert.alert('Error', 'La cantidad debe ser un número mayor a 0.');
-    }
-    if (descuentoNum < 0 || isNaN(descuentoNum)) {
-      console.log('Descuento validation failed:', descuentoNum);
-      return Alert.alert('Error', 'El descuento debe ser un número válido.');
-    }
-
-    const { precio_unitario_sin_iva, precio_unitario_con_iva, subtotal } = calculateSubtotal(cantidad, productos_id, descuento);
+    const precios = calculateSubtotal(cantidad, productos_id);
+    const productoNombre = productos.find(p => p.id === Number(productos_id))?.nombre || 'Producto';
     const nuevoProducto = {
       productos_id,
-      cantidad: cantidadNum,
-      precio_unitario_sin_iva,
-      precio_unitario_con_iva,
-      subtotal,
-      descuento: descuentoNum,
+      cantidad: Number(cantidad),
+      precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
+      precio_unitario_con_iva: precios.precio_unitario_con_iva,
+      subtotal: precios.subtotal,
+      nombre: productoNombre,
     };
 
     setProductosSeleccionados((prev) => [...prev, nuevoProducto]);
-    const nuevoSubtotalTotal = productosSeleccionados.reduce((acc, p) => acc + Number(p.subtotal), 0) + Number(subtotal);
-    handleChange('subtotal', nuevoSubtotalTotal.toString());
-    handleChange('pago_pendiente', nuevoSubtotalTotal.toString());
     resetDetalleForm();
+    setMostrarFormularioProducto(false);
   };
 
+  const handleEliminarProducto = (index) => {
+    setProductosSeleccionados(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Funciones de exportación
   const exportarExcel = async () => {
     try {
       setCargandoExportar(true);
-
       if (pedidosFiltrados.length === 0) {
         Alert.alert('Sin datos', 'No hay pedidos para exportar.');
         return;
       }
 
       const datos = pedidosFiltrados.map((p) => {
-        const vendedor = vendedores.find((v) => v.id === p.notas_venta?.clientes?.vendedor_id);
+        const vendedorPedido = vendedores.find((v) => v.id === p.notas_venta?.clientes?.vendedor_id);
         const pagado = (p.notas_venta?.pago_pendiente || 0) <= 0;
+        
         return {
           Folio: p.notas_venta?.folio || 'N/A',
           Fecha: p.notas_venta?.fecha || 'N/A',
           Cliente: `${p.notas_venta?.clientes?.nombre_contacto || 'N/A'} (${p.notas_venta?.clientes?.empresa || 'N/A'})`,
-          Vendedor: vendedor ? vendedor.nombre : 'Sin asignar',
+          Vendedor: vendedorPedido?.nombre || 'Sin asignar',
           Material: p.productos?.material || 'N/A',
+          Producto: p.productos?.nombre || 'N/A',
           Cantidad: p.cantidad || 0,
-          'Precio Unitario (sin IVA)': p.precio_venta || 0,
-          'Precio Unitario (con IVA)': p.precio_iva || 0,
-          Subtotal: ((p.cantidad || 0) * (p.precio_iva || 0)).toLocaleString('es-CO'),
-          'Pago Pendiente': (p.notas_venta?.pago_pendiente || 0).toLocaleString('es-CO'),
-          Estatus: p.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente',
+          'Precio Unitario': p.precio_venta || 0,
+          'Precio con IVA': p.precio_iva || 0,
+          Total: ((p.cantidad || 0) * (p.precio_iva || 0)).toFixed(2),
+          'Pago Pendiente': (p.notas_venta?.pago_pendiente || 0).toFixed(2),
+          Estado: p.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente',
           Pagado: pagado ? 'Sí' : 'No',
         };
       });
+
       const ws = XLSX.utils.json_to_sheet(datos);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
@@ -668,7 +575,6 @@ export default function Pedidos() {
 
       await Sharing.shareAsync(uri);
     } catch (error) {
-      console.error('Error exportando Excel:', error.message);
       Alert.alert('Error', 'No se pudo exportar el archivo Excel: ' + error.message);
     } finally {
       setCargandoExportar(false);
@@ -678,7 +584,6 @@ export default function Pedidos() {
   const exportarPDF = async () => {
     try {
       setCargandoExportar(true);
-
       if (pedidosFiltrados.length === 0) {
         Alert.alert('Sin datos', 'No hay pedidos para exportar.');
         return;
@@ -705,36 +610,29 @@ export default function Pedidos() {
                   <th>Fecha</th>
                   <th>Cliente</th>
                   <th>Vendedor</th>
-                  <th>Material</th>
+                  <th>Producto</th>
                   <th>Cantidad</th>
-                  <th>Precio Unitario (sin IVA)</th>
-                  <th>Precio Unitario (con IVA)</th>
-                  <th>Subtotal</th>
-                  <th>Pago Pendiente</th>
-                  <th>Estatus</th>
-                  <th>Pagado</th>
+                  <th>Precio</th>
+                  <th>Total</th>
+                  <th>Estado</th>
                 </tr>
               </thead>
               <tbody>
       `;
 
       pedidosFiltrados.forEach((p) => {
-        const vendedor = vendedores.find((v) => v.id === p.notas_venta.clientes.vendedor_id);
-        const pagado = p.notas_venta.pago_pendiente <= 0;
+        const vendedorPedido = vendedores.find((v) => v.id === p.notas_venta.clientes.vendedor_id);
         html += `
           <tr>
             <td>${p.notas_venta.folio}</td>
             <td>${p.notas_venta.fecha}</td>
-            <td>${p.notas_venta.clientes.nombre_contacto} (${p.notas_venta.clientes.empresa || 'N/A'})</td>
-            <td>${vendedor ? vendedor.nombre : 'Sin asignar'}</td>
-            <td>${p.productos.material || 'N/A'}</td>
+            <td>${p.notas_venta.clientes.nombre_contacto}</td>
+            <td>${vendedorPedido?.nombre || 'Sin asignar'}</td>
+            <td>${p.productos.nombre}</td>
             <td>${p.cantidad}</td>
-            <td>${p.precio_venta}</td>
-            <td>${p.precio_iva}</td>
-            <td>${(p.cantidad * p.precio_iva).toFixed(2)}</td>
-            <td>${p.notas_venta.pago_pendiente.toLocaleString('es-CO')}</td>
+            <td>$${p.precio_iva}</td>
+            <td>$${(p.cantidad * p.precio_iva).toFixed(2)}</td>
             <td>${p.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente'}</td>
-            <td>${pagado ? 'Sí' : 'No'}</td>
           </tr>
         `;
       });
@@ -750,47 +648,40 @@ export default function Pedidos() {
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error) {
-      console.error('Error exportando PDF:', error.message);
       Alert.alert('Error', 'No se pudo exportar el archivo PDF: ' + error.message);
     } finally {
       setCargandoExportar(false);
     }
   };
 
+  // Funciones de navegación
   const editarPedido = (pedido) => {
     setForm({
       id: pedido.id,
       notas_venta_id: pedido.notas_venta_id,
-      cliente_id: pedido.notas_venta.cliente_id,
+      cliente_id: pedido.notas_venta.clientes.id,
       productos_id: pedido.productos_id,
       cantidad: pedido.cantidad.toString(),
-      precio_unitario_sin_iva: pedido.precio_venta.toString(),
-      precio_unitario_con_iva: pedido.precio_iva.toString(),
-      subtotal: (pedido.cantidad * pedido.precio_iva).toString(),
       fecha: pedido.notas_venta.fecha,
-      folio: pedido.notas_venta.folio,
+      folio: pedido.id.toString(),
       vendedor_id: pedido.notas_venta.clientes.vendedor_id?.toString() || '',
-      status: pedido.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente',
-      pago_pendiente: pedido.notas_venta.pago_pendiente.toString(),
       abono: '',
-      descuento: '',
+      descuento: '0',
     });
+    setAplicarIva(pedido.notas_venta.iva > 0);
     setMostrarFormulario(true);
   };
 
   const handleVerDetalles = (pedido) => {
     setMostrarDetalles(pedido);
-    setDetalleForm({ ...detalleForm, pedido_id: pedido.id });
     setProductosSeleccionados([{
       productos_id: pedido.productos_id,
       cantidad: pedido.cantidad,
       precio_unitario_sin_iva: pedido.precio_venta.toString(),
       precio_unitario_con_iva: pedido.precio_iva.toString(),
       subtotal: (pedido.cantidad * pedido.precio_iva).toString(),
-      descuento: '0',
+      nombre: pedido.productos.nombre,
     }]);
-    handleChange('subtotal', (pedido.cantidad * pedido.precio_iva).toString());
-    handleChange('pago_pendiente', pedido.notas_venta.pago_pendiente.toString());
   };
 
   const handleVolver = () => {
@@ -798,502 +689,297 @@ export default function Pedidos() {
     resetDetalleForm();
   };
 
+  // Configuración de tema
   const inputTheme = {
     colors: { primary: '#3b82f6', text: '#ffffff', placeholder: '#ccc' },
   };
 
-  if (mostrarDetalles || mostrarFormulario) {
-    let pagado;
-    let iva;
-    const subtotalTotal = productosSeleccionados.reduce((acc, p) => acc + Number(p.subtotal || 0), 0);
-    const vendedor = vendedores.find((v) => v.id === (mostrarDetalles?.notas_venta?.clientes?.vendedor_id || form.vendedor_id));
+  // Variables calculadas
+  const vendedor = mostrarDetalles 
+    ? vendedores.find((v) => v.id === mostrarDetalles.notas_venta?.clientes?.vendedor_id)
+    : null;
+  const pagado = mostrarDetalles 
+    ? mostrarDetalles.notas_venta.pago_pendiente <= 0
+    : false;
+  const subtotalTotal = productosSeleccionados.reduce((acc, p) => acc + Number(p.subtotal || 0), 0);
+  const iva = aplicarIva ? subtotalTotal * 0.16 : 0;
+  const total = subtotalTotal + iva;
 
-    if (mostrarFormulario) {
-      pagado = Number(form.pago_pendiente) <= 0;
-      iva = productosSeleccionados.reduce((acc, p) => acc + (Number(p.cantidad || 0) * (Number(p.precio_unitario_con_iva || 0) - Number(p.precio_unitario_sin_iva || 0))), 0);
-    } else {
-      pagado = mostrarDetalles.notas_venta.pago_pendiente <= 0;
-      iva = (mostrarDetalles.cantidad * (mostrarDetalles.precio_iva - mostrarDetalles.precio_venta)) || 0;
-    }
-
-    if (mostrarFormulario) {
-      return (
-        <View style={styles.container}>
-          <View style={styles.header}>
-            <Text style={styles.title}>{form.id ? 'Editar Pedido' : 'Nuevo Pedido'}</Text>
-          </View>
-          <ScrollView style={styles.formulario}>
-            <View style={styles.row2}>
-              <View style={styles.col2}>
-                <PaperInput
-                  label="Folio *"
-                  value={form.folio}
-                  onChangeText={(text) => handleChange('folio', text)}
-                  mode="outlined"
-                  style={styles.input}
-                  theme={inputTheme}
-                  textColor="#ffffff"
-                  disabled={cargando}
-                />
-              </View>
-              <View style={styles.col2}>
-                <TouchableOpacity
-                  onPress={() => setShowDatePicker(true)}
-                  style={styles.datePickerButton}
-                  disabled={cargando}
-                >
-                  <PaperInput
-                    label="Fecha *"
-                    value={form.fecha}
-                    mode="outlined"
-                    style={styles.input}
-                    theme={inputTheme}
-                    textColor="#ffffff"
-                    editable={false}
-                    right={<PaperInput.Icon name="calendar" color="#ffffff" />}
-                  />
-                </TouchableOpacity>
-                {showDatePicker && (
-                  <DateTimePicker
-                    value={new Date(form.fecha)}
-                    mode="date"
-                    display="default"
-                    onChange={handleDateChange}
-                  />
-                )}
-              </View>
-            </View>
-            <View style={styles.row2}>
-              <View style={styles.col2}>
-                <Text style={styles.label}>Cliente *</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={form.cliente_id}
-                    onValueChange={(value) => handleChange('cliente_id', value)}
-                    style={styles.picker}
-                    enabled={!cargando}
-                    mode="dropdown"
-                    dropdownIconColor="#ffffff"
-                  >
-                    <Picker.Item
-                      label="Seleccionar cliente"
-                      value=""
-                      style={styles.pickerItemPlaceholder}
-                    />
-                    {clientes.map((c) => (
-                      <Picker.Item
-                        key={c.id}
-                        label={`${c.nombre_contacto} (${c.empresa || 'N/A'})`}
-                        value={c.id}
-                        style={styles.pickerItem}
-                      />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-              <View style={styles.col2}>
-                <Text style={styles.label}>Vendedor *</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={form.vendedor_id}
-                    onValueChange={(value) => handleChange('vendedor_id', value)}
-                    style={styles.picker}
-                    enabled={!cargando}
-                    mode="dropdown"
-                    dropdownIconColor="#ffffff"
-                  >
-                    <Picker.Item
-                      label="Seleccionar vendedor"
-                      value=""
-                      style={styles.pickerItemPlaceholder}
-                    />
-                    {vendedores.map((v) => (
-                      <Picker.Item
-                        key={v.id}
-                        label={v.nombre}
-                        value={v.id}
-                        style={styles.pickerItem}
-                      />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-            </View>
-            <View style={styles.section}>
-              <Text style={styles.subTitle}>Añadir Producto</Text>
-              <View style={styles.row2}>
-                <View style={styles.col2}>
-                  <Text style={styles.label}>Producto</Text>
-                  <View style={styles.pickerContainer}>
-                    <Picker
-                      selectedValue={detalleForm.productos_id}
-                      onValueChange={(value) => handleDetalleChange('productos_id', value)}
-                      style={styles.picker}
-                      enabled={!cargando}
-                      mode="dropdown"
-                      dropdownIconColor="#ffffff"
-                    >
-                      <Picker.Item
-                        label="Seleccionar producto"
-                        value=""
-                        style={styles.pickerItemPlaceholder}
-                      />
-                      {productos.map((p) => (
-                        <Picker.Item
-                          key={p.id}
-                          label={p.nombre}
-                          value={p.id}
-                          style={styles.pickerItem}
-                        />
-                      ))}
-                    </Picker>
-                  </View>
-                </View>
-                <View style={styles.col2}>
-                  <PaperInput
-                    label="Cantidad"
-                    value={detalleForm.cantidad}
-                    onChangeText={(text) => handleDetalleChange('cantidad', text)}
-                    mode="outlined"
-                    style={styles.input}
-                    keyboardType="numeric"
-                    theme={inputTheme}
-                    textColor="#ffffff"
-                    disabled={cargando}
-                    placeholder="0"
-                  />
-                </View>
-              </View>
-              <View style={styles.row2}>
-                <View style={styles.col2}>
-                  <PaperInput
-                    label="Descuento (%)"
-                    value={detalleForm.descuento}
-                    onChangeText={(text) => handleDetalleChange('descuento', text)}
-                    mode="outlined"
-                    style={styles.input}
-                    keyboardType="numeric"
-                    theme={inputTheme}
-                    textColor="#ffffff"
-                    disabled={cargando}
-                    placeholder="0"
-                  />
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.btnGuardar}
-                onPress={handleAñadirProducto}
-                disabled={cargando}
-              >
-                {cargando ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.botonTexto}>Añadir Producto</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-            <View style={styles.financialGrid}>
-              <View style={styles.financialCard}>
-                <Text style={styles.subTitle}>Resumen</Text>
-                <View style={styles.financialRow}>
-                  <Text style={styles.label}>Subtotal:</Text>
-                  <Text style={styles.text}>${subtotalTotal.toLocaleString('es-CO')}</Text>
-                </View>
-                <View style={styles.financialRow}>
-                  <Text style={styles.label}>IVA (16%):</Text>
-                  <Text style={styles.text}>${iva.toLocaleString('es-CO')}</Text>
-                </View>
-                <View style={[styles.financialRow, styles.totalRow]}>
-                  <Text style={styles.text}>Total:</Text>
-                  <Text style={styles.text}>${subtotalTotal.toLocaleString('es-CO')}</Text>
-                </View>
-              </View>
-              <View style={styles.financialCard}>
-                <Text style={styles.subTitle}>Estado de Pago</Text>
-                <View style={styles.financialRow}>
-                  <Text style={styles.label}>Abono:</Text>
-                  <PaperInput
-                    value={form.abono}
-                    onChangeText={(text) => handleChange('abono', text)}
-                    mode="outlined"
-                    style={[styles.input, { backgroundColor: '#1e293b' }]}
-                    keyboardType="numeric"
-                    theme={inputTheme}
-                    textColor="#ffffff"
-                    disabled={cargando}
-                    placeholder="0"
-                  />
-                </View>
-                <View style={styles.financialRow}>
-                  <Text style={styles.label}>Pago Pendiente:</Text>
-                  <Text style={styles.text}>${form.pago_pendiente}</Text>
-                </View>
-                <View style={[styles.financialRow, styles.totalRow]}>
-                  <Text style={styles.text}>Estado:</Text>
-                  <Text style={[styles.text, pagado ? styles.textPagado : styles.textPendiente]}>
-                    {pagado ? 'Pagado' : 'Pendiente'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-            <View style={styles.botonesForm}>
-              <TouchableOpacity
-                style={styles.btnGuardar}
-                onPress={handleGuardar}
-                disabled={cargando}
-              >
-                {cargando ? (
-                  <ActivityIndicator color="#ffffff" size="small" />
-                ) : (
-                  <Text style={styles.botonTexto}>{form.id ? 'Actualizar' : 'Guardar'}</Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.btnCancelar}
-                onPress={resetForm}
-                disabled={cargando}
-              >
-                <Text style={styles.botonTexto}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </View>
-      );
-    }
-
-    // Scope for mostrarDetalles
-    const { precio_unitario_sin_iva, precio_unitario_con_iva, subtotal, pago_pendiente } = calculateSubtotal(mostrarDetalles.cantidad, mostrarDetalles.productos_id);
-
+  // RENDER: Vista de detalles
+  if (mostrarDetalles) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Detalles del Pedido</Text>
-          <TouchableOpacity
-            onPress={handleVolver}
-            style={styles.btnVolver}
-          >
+          <Text style={styles.title}>Detalles del pedido</Text>
+          <TouchableOpacity onPress={handleVolver} style={styles.btnVolver}>
             <Text style={styles.botonTexto}>← Volver</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.detallesContainer}>
-          <View style={styles.detallesGrid}>
-            <View>
-              <Text style={styles.label}>Fecha:</Text>
-              <Text style={styles.text}>{mostrarDetalles.notas_venta.fecha}</Text>
+          {/* Información básica */}
+          <View style={styles.infoGrid}>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Fecha:</Text>
+              <Text style={styles.infoValue}>{mostrarDetalles.notas_venta.fecha}</Text>
             </View>
-            <View>
-              <Text style={styles.label}>Folio:</Text>
-              <Text style={styles.text}>{mostrarDetalles.notas_venta.folio}</Text>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Folio:</Text>
+              <Text style={styles.infoValue}>{mostrarDetalles.id}</Text>
             </View>
-            <View>
-              <Text style={styles.label}>Cliente:</Text>
-              <Text style={styles.text}>{mostrarDetalles.notas_venta.clientes.nombre_contacto}</Text>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Cliente:</Text>
+              <Text style={styles.infoValue}>{mostrarDetalles.notas_venta.clientes.nombre_contacto}</Text>
             </View>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.label}>Vendedor:</Text>
-            <Text style={styles.text}>{vendedor ? vendedor.nombre : 'Sin asignar'}</Text>
-          </View>
-
-          <View style={styles.section}>
-            <Text style={styles.subTitle}>Productos</Text>
-            <View style={styles.table}>
-              <View style={styles.tableHeader}>
-                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Nombre</Text>
-                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Cantidad</Text>
-                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Precio Unitario</Text>
-                <Text style={[styles.tableHeaderText, { flex: 1 }]}>Estatus</Text>
-              </View>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, { flex: 2 }]}>{mostrarDetalles.productos.nombre}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>{mostrarDetalles.cantidad}</Text>
-                <Text style={[styles.tableCell, { flex: 1 }]}>${mostrarDetalles.precio_venta}</Text>
-                <View style={[styles.tableCell, { flex: 1, flexDirection: 'row', alignItems: 'center' }]}>
-                  <Text style={[
-                    styles.statusTag,
-                    mostrarDetalles.entregas?.fecha_entrega ? styles.statusEntregado : styles.statusPendiente
-                  ]}>
-                    {mostrarDetalles.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente'}
-                  </Text>
-                  {mostrarDetalles.entregas?.fecha_entrega && (
-                    <Ionicons name="checkmark-circle" size={16} color="#22c55e" style={{ marginLeft: 5 }} />
-                  )}
-                </View>
-              </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Vendedor:</Text>
+              <Text style={styles.infoValue}>{vendedor?.nombre || 'Sin asignar'}</Text>
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.subTitle}>Añadir Producto</Text>
-            <View style={styles.row2}>
-              <View style={styles.col2}>
-                <Text style={styles.label}>Producto</Text>
-                <View style={styles.pickerContainer}>
-                  <Picker
-                    selectedValue={detalleForm.productos_id}
-                    onValueChange={(value) => handleDetalleChange('productos_id', value)}
-                    style={styles.picker}
-                    enabled={!cargando}
-                    mode="dropdown"
-                    dropdownIconColor="#ffffff"
-                  >
-                    <Picker.Item
-                      label="Seleccionar producto"
-                      value=""
-                      style={styles.pickerItemPlaceholder}
-                    />
-                    {productos.map((p) => (
-                      <Picker.Item
-                        key={p.id}
-                        label={p.nombre}
-                        value={p.id}
-                        style={styles.pickerItem}
-                      />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-              <View style={styles.col2}>
-                <PaperInput
-                  label="Cantidad"
-                  value={detalleForm.cantidad}
-                  onChangeText={(text) => handleDetalleChange('cantidad', text)}
-                  mode="outlined"
-                  style={styles.input}
-                  keyboardType="numeric"
-                  theme={inputTheme}
-                  textColor="#ffffff"
-                  disabled={cargando}
-                  placeholder="0"
-                />
-              </View>
-            </View>
-            <View style={styles.row2}>
-              <View style={styles.col2}>
-                <PaperInput
-                  label="Descuento (%)"
-                  value={detalleForm.descuento}
-                  onChangeText={(text) => handleDetalleChange('descuento', text)}
-                  mode="outlined"
-                  style={styles.input}
-                  keyboardType="numeric"
-                  theme={inputTheme}
-                  textColor="#ffffff"
-                  disabled={cargando}
-                  placeholder="0"
-                />
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.btnGuardar}
-              onPress={handleAñadirProducto}
-              disabled={cargando}
-            >
-              {cargando ? (
-                <ActivityIndicator color="#ffffff" size="small" />
-              ) : (
-                <Text style={styles.botonTexto}>Añadir Producto</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.financialGrid}>
-            <View style={styles.financialCard}>
-              <Text style={styles.subTitle}>Resumen</Text>
-              <View style={styles.financialRow}>
-                <Text style={styles.label}>Subtotal:</Text>
-                <Text style={styles.text}>${(mostrarDetalles.cantidad * mostrarDetalles.precio_iva).toLocaleString('es-CO')}</Text>
-              </View>
-              <View style={styles.financialRow}>
-                <Text style={styles.label}>IVA (16%):</Text>
-                <Text style={styles.text}>${iva.toLocaleString('es-CO')}</Text>
-              </View>
-              <View style={[styles.financialRow, styles.totalRow]}>
-                <Text style={styles.text}>Total:</Text>
-                <Text style={styles.text}>${(mostrarDetalles.cantidad * mostrarDetalles.precio_iva).toLocaleString('es-CO')}</Text>
-              </View>
-            </View>
-            <View style={styles.financialCard}>
-              <Text style={styles.subTitle}>Estado de Pago</Text>
-              <View style={styles.financialRow}>
-                <Text style={styles.label}>Abono:</Text>
-                <PaperInput
-                  value={form.abono}
-                  onChangeText={(text) => handleChange('abono', text)}
-                  mode="outlined"
-                  style={[styles.input, { backgroundColor: '#1e293b' }]}
-                  keyboardType="numeric"
-                  theme={inputTheme}
-                  textColor="#ffffff"
-                  disabled={cargando}
-                  placeholder="0"
-                />
-              </View>
-              <View style={styles.financialRow}>
-                <Text style={styles.label}>Pago Pendiente:</Text>
-                <Text style={styles.text}>${pago_pendiente}</Text>
-              </View>
-              <View style={[styles.financialRow, styles.totalRow]}>
-                <Text style={styles.text}>Estado:</Text>
-                <Text style={[styles.text, pagado ? styles.textPagado : styles.textPendiente]}>
-                  {pagado ? 'Pagado' : 'Pendiente'}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              onPress={() => handleAbonar(mostrarDetalles.id)}
-              style={styles.btnAbonar}
-              disabled={cargando || pagado}
-            >
-              <Ionicons name="cash" size={16} color="#ffffff" />
-              <Text style={styles.botonTexto}>Abonar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => editarPedido(mostrarDetalles)}
-              style={styles.btnEditar}
-              disabled={cargando}
-            >
-              <Ionicons name="pencil" size={16} color="#ffffff" />
-              <Text style={styles.botonTexto}>Editar</Text>
-            </TouchableOpacity>
-            {!mostrarDetalles.entregas?.fecha_entrega && (
+          {/* Sección de Productos */}
+          <View style={styles.productosSection}>
+            <View style={styles.productosHeader}>
+              <Text style={styles.subTitle}>Productos</Text>
               <TouchableOpacity
-                onPress={() => handleEntregar(mostrarDetalles.id)}
-                style={styles.btnEntregar}
+                style={styles.btnAnadirProducto}
+                onPress={() => setMostrarFormularioProducto(true)}
                 disabled={cargando}
               >
-                <Ionicons name="cube" size={16} color="#ffffff" />
-                <Text style={styles.botonTexto}>Entregar</Text>
+                <Text style={styles.btnAnadirTexto}>+ Añadir producto</Text>
               </TouchableOpacity>
+            </View>
+
+            {/* Formulario para añadir producto */}
+            {mostrarFormularioProducto && (
+              <View style={styles.formularioProducto}>
+                <View style={styles.row2}>
+                  <View style={styles.col2}>
+                    <Text style={styles.label}>Producto</Text>
+                    <View style={styles.pickerContainer}>
+                      <Picker
+                        selectedValue={detalleForm.productos_id}
+                        onValueChange={(value) => handleDetalleChange('productos_id', value)}
+                        style={styles.picker}
+                        enabled={!cargando}
+                      >
+                        <Picker.Item label="Seleccionar producto" value="" />
+                        {productos.map((p) => (
+                          <Picker.Item key={p.id} label={p.nombre} value={p.id} />
+                        ))}
+                      </Picker>
+                    </View>
+                  </View>
+                  <View style={styles.col2}>
+                    <PaperInput
+                      label="Cantidad"
+                      value={detalleForm.cantidad}
+                      onChangeText={(text) => handleDetalleChange('cantidad', text)}
+                      mode="outlined"
+                      style={styles.input}
+                      keyboardType="numeric"
+                      theme={inputTheme}
+                      textColor="#ffffff"
+                      disabled={cargando}
+                    />
+                  </View>
+                </View>
+                <View style={styles.botonesFormularioProducto}>
+                  <TouchableOpacity
+                    style={styles.btnGuardarProducto}
+                    onPress={handleAñadirProducto}
+                    disabled={cargando}
+                  >
+                    <Text style={styles.botonTexto}>Añadir</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.btnCancelarProducto}
+                    onPress={() => setMostrarFormularioProducto(false)}
+                  >
+                    <Text style={styles.botonTexto}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             )}
+
+            {/* Tabla de productos */}
+            <View style={styles.tablaProductos}>
+              <View style={styles.tablaHeader}>
+                <Text style={[styles.tablaHeaderText, { flex: 3 }]}>Nombre</Text>
+                <Text style={[styles.tablaHeaderText, { flex: 1 }]}>Cantidad</Text>
+                <Text style={[styles.tablaHeaderText, { flex: 1 }]}>Precio Unitario</Text>
+                <Text style={[styles.tablaHeaderText, { flex: 1 }]}>Importe</Text>
+                <Text style={[styles.tablaHeaderText, { flex: 1 }]}>Estatus</Text>
+                <Text style={[styles.tablaHeaderText, { flex: 1 }]}>Acciones</Text>
+              </View>
+
+              {/* Producto principal */}
+              <View style={styles.tablaFila}>
+                <Text style={[styles.tablaCelda, { flex: 3, textAlign: 'left' }]}>
+                  {mostrarDetalles.productos.nombre}
+                </Text>
+                <Text style={[styles.tablaCelda, { flex: 1 }]}>
+                  {mostrarDetalles.cantidad} millares
+                </Text>
+                <Text style={[styles.tablaCelda, { flex: 1 }]}>
+                  $ {mostrarDetalles.precio_venta}
+                </Text>
+                <Text style={[styles.tablaCelda, { flex: 1 }]}>
+                  $ {(mostrarDetalles.cantidad * mostrarDetalles.precio_venta).toFixed(0)}
+                </Text>
+                <View style={[styles.tablaCelda, { flex: 1, alignItems: 'center' }]}>
+                  <View style={[
+                    styles.estatusPill,
+                    mostrarDetalles.entregas?.fecha_entrega ? styles.estatusEntregado : styles.estatusPendiente
+                  ]}>
+                    <Text style={styles.estatusTexto}>
+                      {mostrarDetalles.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.tablaCelda, { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 8 }]}>
+                  <TouchableOpacity 
+                    style={styles.accionBtn}
+                    onPress={() => editarPedido(mostrarDetalles)}
+                  >
+                    <Ionicons name="pencil" size={16} color="#6b7280" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.accionBtnEliminar}
+                    onPress={() => handleEliminar(mostrarDetalles.id)}
+                  >
+                    <Ionicons name="trash" size={16} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Productos adicionales */}
+              {productosSeleccionados.slice(1).map((producto, index) => (
+                <View key={index + 1} style={styles.tablaFila}>
+                  <Text style={[styles.tablaCelda, { flex: 3, textAlign: 'left' }]}>
+                    {producto.nombre}
+                  </Text>
+                  <Text style={[styles.tablaCelda, { flex: 1 }]}>
+                    {producto.cantidad} millares
+                  </Text>
+                  <Text style={[styles.tablaCelda, { flex: 1 }]}>
+                    $ {producto.precio_unitario_sin_iva}
+                  </Text>
+                  <Text style={[styles.tablaCelda, { flex: 1 }]}>
+                    $ {producto.subtotal}
+                  </Text>
+                  <View style={[styles.tablaCelda, { flex: 1, alignItems: 'center' }]}>
+                    <View style={[styles.estatusPill, styles.estatusPendiente]}>
+                      <Text style={styles.estatusTexto}>Pendiente</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.tablaCelda, { flex: 1, flexDirection: 'row', justifyContent: 'center' }]}>
+                    <TouchableOpacity 
+                      style={styles.accionBtnEliminar}
+                      onPress={() => handleEliminarProducto(index + 1)}
+                    >
+                      <Ionicons name="trash" size={16} color="#ffffff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Resumen financiero */}
+          <View style={styles.resumenContainer}>
+            <View style={styles.resumenIzquierda}>
+              <View style={styles.resumenFila}>
+                <Text style={styles.resumenLabel}>Sub total:</Text>
+                <Text style={styles.resumenValor}>$ {subtotalTotal.toLocaleString('es-CO')}</Text>
+              </View>
+              
+              <View style={styles.facturaRow}>
+                <TouchableOpacity 
+                  style={[styles.checkbox, { backgroundColor: aplicarIva ? '#3b82f6' : 'transparent' }]}
+                  onPress={() => setAplicarIva(!aplicarIva)}
+                >
+                  {aplicarIva && <Ionicons name="checkmark" size={16} color="#ffffff" />}
+                </TouchableOpacity>
+                <Text style={styles.resumenLabel}>Factura (IVA 16%)</Text>
+              </View>
+              
+              <View style={styles.resumenFila}>
+                <Text style={styles.ivaLabel}>IVA (16%):</Text>
+                <Text style={styles.ivaValor}>$ {iva.toFixed(0)}</Text>
+              </View>
+              
+              <View style={styles.resumenFila}>
+                <Text style={styles.resumenLabel}>Descuento:</Text>
+                <Text style={styles.resumenValor}>0%</Text>
+              </View>
+              
+              <View style={styles.resumenFila}>
+                <Text style={styles.totalLabel}>Total:</Text>
+                <Text style={styles.totalValor}>$ {total.toFixed(0)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.resumenDerecha}>
+              <View style={styles.estadoIndicadores}>
+                <View style={styles.estadoFila}>
+                  <View style={[styles.estadoBarra, { backgroundColor: pagado ? '#22c55e' : '#6b7280' }]} />
+                  <Text style={styles.estadoTexto}>$ depósitos</Text>
+                </View>
+                <View style={styles.estadoFila}>
+                  <View style={[styles.estadoBarra, { backgroundColor: mostrarDetalles.entregas?.fecha_entrega ? '#3b82f6' : '#6b7280' }]} />
+                  <Text style={styles.estadoTexto}>□ entrega</Text>
+                </View>
+                <View style={styles.estadoFila}>
+                  <View style={[styles.estadoBarra, { backgroundColor: '#eab308' }]} />
+                  <Text style={styles.estadoTexto}>≤ crédito</Text>
+                </View>
+              </View>
+
+              <View style={styles.botonesEstado}>
+                <TouchableOpacity
+                  style={styles.btnAbonar}
+                  onPress={() => handleAbonar(mostrarDetalles.id)}
+                  disabled={cargando || pagado}
+                >
+                  <Text style={styles.btnEstadoTexto}>Abonar</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.btnEstado, pagado ? styles.btnPagado : styles.btnSinPagar]}
+                  disabled={true}
+                >
+                  <Text style={styles.btnEstadoTexto}>
+                    {pagado ? 'Pagado' : 'Sin pagar'}
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.btnEstado, mostrarDetalles.entregas?.fecha_entrega ? styles.btnEntregado : styles.btnPendiente]}
+                  onPress={() => !mostrarDetalles.entregas?.fecha_entrega && handleEntregar(mostrarDetalles.id)}
+                  disabled={cargando || mostrarDetalles.entregas?.fecha_entrega}
+                >
+                  <Text style={styles.btnEstadoTexto}>
+                    {mostrarDetalles.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.diasRestantes}></Text>
+            </View>
+          </View>
+
+          <View style={styles.imprimirContainer}>
             <TouchableOpacity
-              onPress={() => {
-                exportarPDF();
-              }}
               style={styles.btnImprimir}
+              onPress={exportarPDF}
               disabled={cargandoExportar}
             >
               {cargandoExportar ? (
                 <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <>
-                  <Ionicons name="document-text" size={16} color="#ffffff" />
-                  <Text style={styles.botonTexto}>Imprimir Comprobante</Text>
-                </>
+                <Text style={styles.btnImprimirTexto}>Imprimir Comprobante</Text>
               )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleEliminar(mostrarDetalles.id)}
-              style={styles.btnEliminar}
-              disabled={cargando}
-            >
-              <Ionicons name="trash" size={16} color="#ffffff" />
-              <Text style={styles.botonTexto}>Eliminar</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -1301,6 +987,185 @@ export default function Pedidos() {
     );
   }
 
+  // RENDER: Formulario
+  if (mostrarFormulario) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{form.id ? 'Editar Pedido' : 'Nuevo Pedido'}</Text>
+          <TouchableOpacity onPress={resetForm} style={styles.btnVolver}>
+            <Text style={styles.botonTexto}>← Volver</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <ScrollView style={styles.formulario}>
+          <View style={styles.row2}>
+            <View style={styles.col2}>
+              <PaperInput
+                label="Folio *"
+                value={form.folio || form.id?.toString() || ''}
+                onChangeText={(text) => handleChange('folio', text)}
+                mode="outlined"
+                style={styles.input}
+                theme={inputTheme}
+                textColor="#ffffff"
+                disabled={cargando || form.id}
+              />
+            </View>
+            <View style={styles.col2}>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                disabled={cargando}
+              >
+                <PaperInput
+                  label="Fecha *"
+                  value={form.fecha}
+                  mode="outlined"
+                  style={styles.input}
+                  theme={inputTheme}
+                  textColor="#ffffff"
+                  editable={false}
+                  right={<PaperInput.Icon name="calendar" color="#ffffff" />}
+                />
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={new Date(form.fecha)}
+                  mode="date"
+                  display="default"
+                  onChange={handleDateChange}
+                />
+              )}
+            </View>
+          </View>
+
+          <View style={styles.row2}>
+            <View style={styles.col2}>
+              <Text style={styles.label}>Cliente *</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={form.cliente_id}
+                  onValueChange={(value) => handleChange('cliente_id', value)}
+                  style={styles.picker}
+                  enabled={!cargando}
+                >
+                  <Picker.Item label="Seleccionar cliente" value="" />
+                  {clientes.map((c) => (
+                    <Picker.Item
+                      key={c.id}
+                      label={`${c.nombre_contacto} (${c.empresa || 'N/A'})`}
+                      value={c.id}
+                    />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+            <View style={styles.col2}>
+              <Text style={styles.label}>Vendedor *</Text>
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={form.vendedor_id}
+                  onValueChange={(value) => handleChange('vendedor_id', value)}
+                  style={styles.picker}
+                  enabled={!cargando}
+                >
+                  <Picker.Item label="Seleccionar vendedor" value="" />
+                  {vendedores.map((v) => (
+                    <Picker.Item key={v.id} label={v.nombre} value={v.id} />
+                  ))}
+                </Picker>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.subTitle}>Producto Principal</Text>
+            <View style={styles.row2}>
+              <View style={styles.col2}>
+                <Text style={styles.label}>Producto</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={form.productos_id}
+                    onValueChange={(value) => handleChange('productos_id', value)}
+                    style={styles.picker}
+                    enabled={!cargando}
+                  >
+                    <Picker.Item label="Seleccionar producto" value="" />
+                    {productos.map((p) => (
+                      <Picker.Item key={p.id} label={p.nombre} value={p.id} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+              <View style={styles.col2}>
+                <PaperInput
+                  label="Cantidad"
+                  value={form.cantidad}
+                  onChangeText={(text) => handleChange('cantidad', text)}
+                  mode="outlined"
+                  style={styles.input}
+                  keyboardType="numeric"
+                  theme={inputTheme}
+                  textColor="#ffffff"
+                  disabled={cargando}
+                />
+              </View>
+            </View>
+
+            <View style={styles.row2}>
+              <View style={styles.col2}>
+                <PaperInput
+                  label="Abono inicial (opcional)"
+                  value={form.abono}
+                  onChangeText={(text) => handleChange('abono', text)}
+                  mode="outlined"
+                  style={styles.input}
+                  keyboardType="numeric"
+                  theme={inputTheme}
+                  textColor="#ffffff"
+                  disabled={cargando}
+                />
+              </View>
+            </View>
+
+            {/* Checkbox para aplicar IVA */}
+            <View style={styles.facturaRow}>
+              <TouchableOpacity 
+                style={[styles.checkbox, { backgroundColor: aplicarIva ? '#3b82f6' : 'transparent' }]}
+                onPress={() => setAplicarIva(!aplicarIva)}
+              >
+                {aplicarIva && <Ionicons name="checkmark" size={16} color="#ffffff" />}
+              </TouchableOpacity>
+              <Text style={styles.resumenLabel}>Aplicar IVA (16%)</Text>
+            </View>
+          </View>
+
+          <View style={styles.botonesForm}>
+            <TouchableOpacity
+              style={styles.btnGuardar}
+              onPress={handleGuardar}
+              disabled={cargando}
+            >
+              {cargando ? (
+                <ActivityIndicator color="#ffffff" size="small" />
+              ) : (
+                <Text style={styles.botonTexto}>{form.id ? 'Actualizar' : 'Guardar'}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.btnCancelar}
+              onPress={resetForm}
+              disabled={cargando}
+            >
+              <Text style={styles.botonTexto}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // RENDER: Lista principal
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -1315,14 +1180,14 @@ export default function Pedidos() {
           disabled={cargando}
         >
           <Ionicons name="add" size={16} color="#ffffff" />
-          <Text style={styles.botonTexto}>Agregar pedido</Text>
+          <Text style={styles.botonTexto}>+ Añadir pedido</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.buscador}>
         <Ionicons name="search" size={20} color="#ffffff" />
         <TextInput
-          placeholder="Buscar por folio o producto"
+          placeholder="Buscar por folio, producto o cliente"
           placeholderTextColor="#cccccc"
           style={styles.inputText}
           value={busqueda}
@@ -1377,37 +1242,46 @@ export default function Pedidos() {
           </View>
         ) : (
           pedidosFiltrados.map((p) => {
-            const vendedor = vendedores.find((v) => v.id === p.notas_venta.clientes.vendedor_id);
-            const pagado = p.notas_venta.pago_pendiente <= 0;
+            const vendedorPedido = vendedores.find((v) => v.id === p.notas_venta.clientes.vendedor_id);
+            const pagadoPedido = p.notas_venta.pago_pendiente <= 0;
 
             return (
               <View key={p.id} style={styles.card}>
                 <View style={styles.cardGrid}>
-                  <View>
-                    <Text style={styles.nombre}>Folio: {p.notas_venta.folio || 'N/A'}</Text>
+                  <View style={styles.infoCompleta}>
+                    <Text style={styles.nombre}>Folio: {p.id}</Text>
                     <Text style={styles.info}>Cliente: {p.notas_venta.clientes.nombre_contacto}</Text>
-                  </View>
-                  <View>
+                    
                     <Text style={styles.label}>Material:</Text>
                     <View style={styles.materialTags}>
-                      <Text style={styles.materialTag}>{p.productos.material || 'N/A'}</Text>
-                      <Text style={styles.tipoMaterialTag}>{p.productos.tipo || 'N/A'}</Text>
+                      <View style={styles.materialTag}>
+                        <Text style={styles.materialTagText}>{p.productos.material || 'N/A'}</Text>
+                      </View>
+                      {p.productos.tipo && (
+                        <View style={styles.tipoMaterialTag}>
+                          <Text style={styles.tipoMaterialTagText}>{p.productos.tipo}</Text>
+                        </View>
+                      )}
                     </View>
                   </View>
-                  <View style={styles.statusContainer}>
-                    <View style={styles.statusItem}>
-                      <Ionicons name="cash" size={16} color="#22c55e" />
-                      <Text style={styles.info}>Detalles</Text>
+
+                  <View style={styles.statusIndicators}>
+                    <View style={styles.statusRow}>
+                      <View style={[styles.statusBar, { backgroundColor: pagadoPedido ? '#22c55e' : '#e5e7eb' }]} />
+                      <Text style={styles.statusLabel}>$ depósitos</Text>
                     </View>
-                    <View style={styles.statusItem}>
-                      <Ionicons name="cube" size={16} color="#3b82f6" />
-                      <Text style={styles.info}>{p.entregas?.fecha_entrega ? 'Entregado' : 'Pendiente'}</Text>
+                    <View style={styles.statusRow}>
+                      <View style={[styles.statusBar, { backgroundColor: p.entregas?.fecha_entrega ? '#3b82f6' : '#e5e7eb' }]} />
+                      <Text style={styles.statusLabel}>□ entrega</Text>
                     </View>
-                    <View style={styles.statusItem}>
-                      <Ionicons name="checkmark-circle" size={16} color="#eab308" />
-                      <Text style={styles.info}>Creado</Text>
+                    <View style={styles.statusRow}>
+                      <View style={[styles.statusBar, { backgroundColor: '#eab308' }]} />
+                      <Text style={styles.statusLabel}>≤ crédito</Text>
                     </View>
                   </View>
+                </View>
+
+                <View style={styles.botonesCard}>
                   <TouchableOpacity
                     onPress={() => handleVerDetalles(p)}
                     style={styles.btnVerDetalles}
@@ -1415,8 +1289,7 @@ export default function Pedidos() {
                     <Ionicons name="eye" size={16} color="#ffffff" />
                     <Text style={styles.botonTexto}>Ver detalles</Text>
                   </TouchableOpacity>
-                </View>
-                <View style={styles.botonesCard}>
+
                   <TouchableOpacity
                     onPress={() => editarPedido(p)}
                     style={styles.btnEditar}
@@ -1425,6 +1298,7 @@ export default function Pedidos() {
                     <Ionicons name="pencil" size={16} color="#ffffff" />
                     <Text style={styles.botonTexto}>Editar</Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
                     onPress={() => handleEliminar(p.id)}
                     style={styles.btnEliminar}
@@ -1433,16 +1307,18 @@ export default function Pedidos() {
                     <Ionicons name="trash" size={16} color="#ffffff" />
                     <Text style={styles.botonTexto}>Eliminar</Text>
                   </TouchableOpacity>
-                  {!pagado && (
+
+                  {!pagadoPedido && (
                     <TouchableOpacity
                       onPress={() => handleAbonar(p.id)}
                       style={styles.btnAbonar}
                       disabled={cargando}
                     >
                       <Ionicons name="cash" size={16} color="#ffffff" />
-                      <Text style={styles.botonTexto}>Abonar</Text>
+                      <Text style={styles.botonTexto}>$ Abonar</Text>
                     </TouchableOpacity>
                   )}
+
                   {!p.entregas?.fecha_entrega && (
                     <TouchableOpacity
                       onPress={() => handleEntregar(p.id)}
@@ -1450,7 +1326,7 @@ export default function Pedidos() {
                       disabled={cargando}
                     >
                       <Ionicons name="cube" size={16} color="#ffffff" />
-                      <Text style={styles.botonTexto}>Entregar</Text>
+                      <Text style={styles.botonTexto}>📦 Entregar</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1559,15 +1435,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  btnImprimir: {
-    backgroundColor: '#f59e0b',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
   btnVerDetalles: {
     backgroundColor: '#6b7280',
     paddingVertical: 8,
@@ -1587,95 +1454,110 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   botonTexto: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
-  formulario: {
-    backgroundColor: '#1e293b',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 16,
-  },
-  formTitulo: { color: '#ffffff', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  botonesForm: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    gap: 8,
-  },
-  btnGuardar: {
-    backgroundColor: '#3b82f6',
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  btnCancelar: {
-    backgroundColor: '#ef4444',
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
   lista: { flex: 1 },
   card: {
     backgroundColor: '#1e293b',
+    borderRadius: 12,
     padding: 16,
-    borderRadius: 10,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#334155',
   },
   cardGrid: {
-    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
   },
-  nombre: { fontSize: 16, fontWeight: 'bold', color: '#ffffff', marginBottom: 4 },
-  info: { color: '#cbd5e1', fontSize: 14, marginTop: 4 },
+  infoCompleta: {
+    flex: 3,
+    paddingRight: 12,
+  },
+  nombre: { 
+    fontSize: 16, 
+    fontWeight: 'bold', 
+    color: '#ffffff', 
+    marginBottom: 4 
+  },
+  info: { 
+    color: '#cbd5e1', 
+    fontSize: 14, 
+    marginTop: 4 
+  },
   materialTags: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 4,
     marginTop: 4,
+    marginBottom: 8,
   },
   materialTag: {
     backgroundColor: '#4b5563',
-    color: '#ffffff',
-    paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  materialTagText: {
     fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '500',
   },
   tipoMaterialTag: {
     backgroundColor: '#334155',
-    color: '#ffffff',
-    paddingVertical: 4,
     paddingHorizontal: 8,
-    borderRadius: 4,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  tipoMaterialTagText: {
     fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '500',
   },
-  statusContainer: {
-    marginTop: 8,
-    gap: 4,
+  statusIndicators: {
+    flex: 2,
+    alignItems: 'flex-end',
   },
-  statusItem: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    marginBottom: 6,
+  },
+  statusBar: {
+    width: 24,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  statusLabel: {
+    fontSize: 11,
+    color: '#cbd5e1',
   },
   botonesCard: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    justifyContent: 'flex-start',
   },
   detallesContainer: {
     backgroundColor: '#1e293b',
     borderRadius: 10,
     padding: 16,
   },
-  detallesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
+  formulario: {
+    backgroundColor: '#1e293b',
+    borderRadius: 10,
+    padding: 16,
     marginBottom: 16,
   },
-  section: {
-    marginBottom: 16,
+  label: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    marginBottom: 4,
+    marginTop: 8,
+    fontWeight: '500',
   },
   subTitle: {
     color: '#ffffff',
@@ -1683,127 +1565,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 8,
   },
-  label: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  text: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  textPagado: {
-    color: '#22c55e',
-  },
-  textPendiente: {
-    color: '#eab308',
-  },
-  table: {
-    backgroundColor: '#334155',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#4b5563',
-    padding: 12,
-  },
-  tableHeaderText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#4b5563',
-    padding: 12,
-  },
-  tableCell: {
-    color: '#cbd5e1',
-    fontSize: 14,
-  },
-  statusTag: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    fontSize: 12,
-    color: '#ffffff',
-  },
-  statusEntregado: {
-    backgroundColor: '#22c55e',
-  },
-  statusPendiente: {
-    backgroundColor: '#eab308',
-  },
-  financialGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
+  section: {
     marginBottom: 16,
-  },
-  financialCard: {
-    flex: 1,
-    backgroundColor: '#334155',
-    borderRadius: 8,
-    padding: 12,
-    minWidth: '45%',
-  },
-  financialRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  totalRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#4b5563',
-    paddingTop: 8,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  input: {
-    backgroundColor: '#1e293b',
-    marginBottom: 12,
-  },
-  row2: {
-    flexDirection: 'row',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  col2: {
-    flex: 1,
-    minWidth: '45%',
-  },
-  pickerContainer: {
-    backgroundColor: '#1e293b',
-    borderWidth: 1,
-    borderColor: '#3b82f6',
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 12,
-  },
-  picker: {
-    color: '#ffffff',
-    height: 40,
-    backgroundColor: '#1e293b',
-  },
-  pickerItem: {
-    color: '#ffffff',
-    backgroundColor: '#1e293b',
-    fontSize: 16,
-  },
-  pickerItemPlaceholder: {
-    color: '#cccccc',
-    backgroundColor: '#1e293b',
-    fontSize: 16,
-  },
-  datePickerButton: {
-    marginBottom: 12,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -1823,5 +1586,311 @@ const styles = StyleSheet.create({
     color: '#cbd5e1',
     fontSize: 16,
     textAlign: 'center',
+  },
+  // Estilos para detalles
+  infoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    gap: 16,
+  },
+  infoItem: {
+    flex: 1,
+    minWidth: '20%',
+  },
+  infoLabel: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  infoValue: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  productosSection: {
+    marginBottom: 16,
+  },
+  productosHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  btnAnadirProducto: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#6b7280',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  btnAnadirTexto: {
+    color: '#ffffff',
+    fontSize: 12,
+  },
+  formularioProducto: {
+    backgroundColor: '#4b5563',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  },
+  botonesFormularioProducto: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  btnGuardarProducto: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  btnCancelarProducto: {
+    backgroundColor: '#6b7280',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+  },
+  tablaProductos: {
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  tablaHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#4b5563',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  tablaHeaderText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  tablaFila: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#4b5563',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  tablaCelda: {
+    color: '#cbd5e1',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  estatusPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  estatusTexto: {
+    fontSize: 11,
+    color: '#ffffff',
+    fontWeight: 'bold',
+  },
+  estatusEntregado: {
+    backgroundColor: '#22c55e',
+  },
+  estatusPendiente: {
+    backgroundColor: '#eab308',
+  },
+  accionBtn: {
+    padding: 6,
+    borderRadius: 4,
+    backgroundColor: '#374151',
+  },
+  accionBtnEliminar: {
+    padding: 6,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  resumenContainer: {
+    backgroundColor: '#334155',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: 'row',
+    gap: 16,
+  },
+  resumenIzquierda: {
+    flex: 1,
+  },
+  resumenDerecha: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  resumenFila: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  resumenLabel: {
+    color: '#cbd5e1',
+    fontSize: 14,
+  },
+  resumenValor: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  facturaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ivaLabel: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  ivaValor: {
+    color: '#3b82f6',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  totalLabel: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  totalValor: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  estadoIndicadores: {
+    marginBottom: 16,
+  },
+  estadoFila: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  estadoBarra: {
+    width: 24,
+    height: 6,
+    borderRadius: 3,
+  },
+  estadoTexto: {
+    color: '#cbd5e1',
+    fontSize: 11,
+  },
+  botonesEstado: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  btnEstado: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  btnPagado: {
+    backgroundColor: '#22c55e',
+    borderColor: '#22c55e',
+  },
+  btnSinPagar: {
+    backgroundColor: 'transparent',
+    borderColor: '#6b7280',
+  },
+  btnEntregado: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  btnPendiente: {
+    backgroundColor: 'transparent',
+    borderColor: '#6b7280',
+  },
+  btnEstadoTexto: {
+    color: '#ffffff',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  diasRestantes: {
+    color: '#6b7280',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
+  imprimirContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  btnImprimir: {
+    backgroundColor: '#1f2937',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  btnImprimirTexto: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // Estilos para formulario
+  row2: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  col2: {
+    flex: 1,
+    minWidth: '45%',
+  },
+  input: {
+    backgroundColor: '#1e293b',
+    marginBottom: 12,
+  },
+  pickerContainer: {
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  picker: {
+    color: '#ffffff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
+  botonesForm: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    gap: 8,
+  },
+  btnGuardar: {
+    backgroundColor: '#3b82f6',
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  btnCancelar: {
+    backgroundColor: '#ef4444',
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
 });

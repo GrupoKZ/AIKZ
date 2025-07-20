@@ -77,8 +77,7 @@ export default function AlmacenCelofan() {
       const { data, error } = await supabase
         .from('productos')
         .select('id, nombre')
-        .eq('material', 'Celofan')
-        .order('nombre', { ascending: true });
+        .order('nombre', { ascending: true }); // Eliminé el filtro por material
 
       if (error) {
         console.error('Error fetching productos:', error);
@@ -129,8 +128,8 @@ export default function AlmacenCelofan() {
 
   const movimientosFiltrados = movimientos.filter(
     (m) =>
-      m.productos.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      m.fecha.toLowerCase().includes(busqueda.toLowerCase())
+      m.productos?.nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
+      m.fecha?.toLowerCase().includes(busqueda.toLowerCase())
   );
 
   const handleChange = (campo, valor) => {
@@ -246,7 +245,7 @@ export default function AlmacenCelofan() {
 
       const datos = movimientosFiltrados.map((m) => ({
         Fecha: m.fecha,
-        Producto: m.productos.nombre,
+        Producto: m.productos?.nombre || '-',
         Millares: m.millares,
         Movimiento: m.movimiento,
         'Producción': m.produccion_celofan?.fecha || '-',
@@ -312,10 +311,10 @@ export default function AlmacenCelofan() {
       movimientosFiltrados.forEach((m) => {
         html += `
           <tr>
-            <td>${m.fecha}</td>
-            <td>${m.productos.nombre}</td>
-            <td>${m.millares}</td>
-            <td>${m.movimiento}</td>
+            <td>${m.fecha || '-'}</td>
+            <td>${m.productos?.nombre || '-'}</td>
+            <td>${m.millares || '-'}</td>
+            <td>${m.movimiento || '-'}</td>
             <td>${m.produccion_celofan?.fecha || '-'}</td>
             <td>${m.entregas?.fecha_entrega || '-'}</td>
           </tr>
@@ -344,11 +343,11 @@ export default function AlmacenCelofan() {
     setForm({
       id: movimiento.id,
       fecha: movimiento.fecha,
-      producto_id: movimiento.producto_id,
+      producto_id: movimiento.producto_id.toString(),
       millares: movimiento.millares.toString(),
       movimiento: movimiento.movimiento,
-      produccion_id: movimiento.produccion_id || '',
-      entrega_id: movimiento.entrega_id || '',
+      produccion_id: movimiento.produccion_id?.toString() || '',
+      entrega_id: movimiento.entrega_id?.toString() || '',
     });
     setMostrarFormulario(true);
   };
@@ -436,11 +435,30 @@ export default function AlmacenCelofan() {
                   onValueChange={(value) => handleChange('producto_id', value)}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar producto" value="" />
-                  {productos.map((p) => (
-                    <Picker.Item key={p.id} label={p.nombre} value={p.id} />
-                  ))}
+                  <Picker.Item
+                    label="Seleccionar producto"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
+                  {productos.length > 0 ? (
+                    productos.map((p) => (
+                      <Picker.Item
+                        key={p.id}
+                        label={p.nombre}
+                        value={p.id.toString()}
+                        style={styles.pickerItem}
+                      />
+                    ))
+                  ) : (
+                    <Picker.Item
+                      label="Cargando productos..."
+                      value=""
+                      style={styles.pickerItemPlaceholder}
+                    />
+                  )}
                 </Picker>
               </View>
             </View>
@@ -472,10 +490,21 @@ export default function AlmacenCelofan() {
                   }}
                   style={styles.picker}
                   enabled={!cargando}
+                  mode="dropdown"
+                  dropdownIconColor="#ffffff"
                 >
-                  <Picker.Item label="Seleccionar movimiento" value="" />
+                  <Picker.Item
+                    label="Seleccionar movimiento"
+                    value=""
+                    style={styles.pickerItemPlaceholder}
+                  />
                   {movimientosTipos.map((m) => (
-                    <Picker.Item key={m} label={m} value={m} />
+                    <Picker.Item
+                      key={m}
+                      label={m}
+                      value={m}
+                      style={styles.pickerItem}
+                    />
                   ))}
                 </Picker>
               </View>
@@ -492,11 +521,30 @@ export default function AlmacenCelofan() {
                     onValueChange={(value) => handleChange('produccion_id', value)}
                     style={styles.picker}
                     enabled={!cargando}
+                    mode="dropdown"
+                    dropdownIconColor="#ffffff"
                   >
-                    <Picker.Item label="Seleccionar producción" value="" />
-                    {producciones.map((p) => (
-                      <Picker.Item key={p.id} label={p.fecha} value={p.id} />
-                    ))}
+                    <Picker.Item
+                      label="Seleccionar producción"
+                      value=""
+                      style={styles.pickerItemPlaceholder}
+                    />
+                    {producciones.length > 0 ? (
+                      producciones.map((p) => (
+                        <Picker.Item
+                          key={p.id}
+                          label={p.fecha}
+                          value={p.id.toString()}
+                          style={styles.pickerItem}
+                        />
+                      ))
+                    ) : (
+                      <Picker.Item
+                        label="Cargando producciones..."
+                        value=""
+                        style={styles.pickerItemPlaceholder}
+                      />
+                    )}
                   </Picker>
                 </View>
               </View>
@@ -514,11 +562,30 @@ export default function AlmacenCelofan() {
                     onValueChange={(value) => handleChange('entrega_id', value)}
                     style={styles.picker}
                     enabled={!cargando}
+                    mode="dropdown"
+                    dropdownIconColor="#ffffff"
                   >
-                    <Picker.Item label="Seleccionar entrega" value="" />
-                    {entregas.map((e) => (
-                      <Picker.Item key={e.id} label={e.fecha_entrega} value={e.id} />
-                    ))}
+                    <Picker.Item
+                      label="Seleccionar entrega"
+                      value=""
+                      style={styles.pickerItemPlaceholder}
+                    />
+                    {entregas.length > 0 ? (
+                      entregas.map((e) => (
+                        <Picker.Item
+                          key={e.id}
+                          label={e.fecha_entrega}
+                          value={e.id.toString()}
+                          style={styles.pickerItem}
+                        />
+                      ))
+                    ) : (
+                      <Picker.Item
+                        label="Cargando entregas..."
+                        value=""
+                        style={styles.pickerItemPlaceholder}
+                      />
+                    )}
                   </Picker>
                 </View>
               </View>
@@ -566,10 +633,10 @@ export default function AlmacenCelofan() {
         ) : (
           movimientosFiltrados.map((m) => (
             <View key={m.id} style={styles.card}>
-              <Text style={styles.nombre}>{m.productos.nombre}</Text>
-              <Text style={styles.info}>📅 Fecha: {m.fecha}</Text>
-              <Text style={styles.info}>📦 Millares: {m.millares}</Text>
-              <Text style={styles.info}>↔️ Movimiento: {m.movimiento}</Text>
+              <Text style={styles.nombre}>{m.productos?.nombre || '-'}</Text>
+              <Text style={styles.info}>📅 Fecha: {m.fecha || '-'}</Text>
+              <Text style={styles.info}>📦 Millares: {m.millares || '-'}</Text>
+              <Text style={styles.info}>↔️ Movimiento: {m.movimiento || '-'}</Text>
               <Text style={styles.info}>🏭 Producción: {m.produccion_celofan?.fecha || '-'}</Text>
               <Text style={styles.info}>🚚 Entrega: {m.entregas?.fecha_entrega || '-'}</Text>
               <View style={styles.botonesCard}>
@@ -708,13 +775,26 @@ const styles = StyleSheet.create({
   },
   pickerContainer: {
     backgroundColor: '#1e293b',
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#3b82f6',
+    borderRadius: 8,
+    overflow: 'hidden',
     marginBottom: 12,
   },
   picker: {
     color: '#fff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
+  pickerItem: {
+    color: '#ffffff',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
+  },
+  pickerItemPlaceholder: {
+    color: '#cccccc',
+    backgroundColor: '#1e293b',
+    fontSize: 16,
   },
   label: {
     color: '#fff',
