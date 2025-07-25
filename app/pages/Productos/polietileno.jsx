@@ -35,10 +35,9 @@ export default function Polietileno() {
     nombre: '',
   });
 
-  const presentaciones = ['Bobina', 'Bolsa',];
+  const presentaciones = ['Bobina', 'Bolsa'];
   const tipos = ['Negra', 'Semi Natural', 'Virgen', 'Color'];
 
-  // Function to generate name with special handling for Bobina
   const generarNombre = (formData) => {
     const { presentacion, tipo, ancho_cm, largo_cm, micraje } = formData;
     const anchoNum = Number(ancho_cm) || 0;
@@ -75,16 +74,12 @@ export default function Polietileno() {
         .eq('material', 'Polietileno')
         .order('nombre', { ascending: true });
 
-      if (error) {
-        Alert.alert('Error', 'No se pudieron cargar los productos de polietileno');
-        console.error('Error fetching productos:', error);
-        return;
-      }
+      if (error) throw error;
 
       setProductos(data || []);
     } catch (error) {
       console.error('Error en fetchProductos:', error);
-      Alert.alert('Error', 'Error inesperado al cargar productos');
+      Alert.alert('Error', 'No se pudieron cargar los productos de polietileno: ' + error.message);
     } finally {
       setCargando(false);
     }
@@ -92,8 +87,9 @@ export default function Polietileno() {
 
   const productosFiltrados = productos.filter(
     (p) =>
-      p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.tipo.toLowerCase().includes(busqueda.toLowerCase())
+      p.material === 'Polietileno' &&
+      (p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+        p.tipo.toLowerCase().includes(busqueda.toLowerCase()))
   );
 
   const handleChange = (campo, valor) => {
@@ -123,8 +119,8 @@ export default function Polietileno() {
   const handleGuardar = async () => {
     const { nombre, presentacion, tipo, ancho_cm, largo_cm, micraje, id } = form;
 
-    if (!nombre.trim() || !presentacion || !tipo) {
-      return Alert.alert('Campos requeridos', 'Nombre, presentación y tipo son obligatorios.');
+    if (!nombre.trim() || !presentacion || !tipo || !micraje) {
+      return Alert.alert('Campos requeridos', 'Nombre, presentación, tipo y micraje son obligatorios.');
     }
 
     const anchoNum = Number(ancho_cm) || null;
@@ -157,18 +153,14 @@ export default function Polietileno() {
         ? await supabase.from('productos').update(dataEnviar).eq('id', id)
         : await supabase.from('productos').insert([dataEnviar]);
 
-      if (error) {
-        Alert.alert('Error', 'No se pudo guardar el producto.');
-        console.error('Error saving producto:', error);
-        return;
-      }
+      if (error) throw error;
 
       Alert.alert('Éxito', id ? 'Producto actualizado correctamente' : 'Producto creado correctamente');
       resetForm();
       fetchProductos();
     } catch (error) {
       console.error('Error en handleGuardar:', error);
-      Alert.alert('Error', 'Error inesperado al guardar el producto.');
+      Alert.alert('Error', 'No se pudo guardar el producto: ' + error.message);
     } finally {
       setCargando(false);
     }
@@ -188,17 +180,13 @@ export default function Polietileno() {
               setCargando(true);
               const { error } = await supabase.from('productos').delete().eq('id', id);
 
-              if (error) {
-                Alert.alert('Error', 'No se pudo eliminar el producto.');
-                console.error('Error deleting producto:', error);
-                return;
-              }
+              if (error) throw error;
 
               Alert.alert('Éxito', 'Producto eliminado correctamente');
               fetchProductos();
             } catch (error) {
               console.error('Error en handleEliminar:', error);
-              Alert.alert('Error', 'Error inesperado al eliminar el producto.');
+              Alert.alert('Error', 'No se pudo eliminar el producto: ' + error.message);
             } finally {
               setCargando(false);
             }
@@ -211,12 +199,10 @@ export default function Polietileno() {
   const exportarExcel = async () => {
     try {
       setCargandoExportar(true);
-
       if (productosFiltrados.length === 0) {
         Alert.alert('Sin datos', 'No hay productos de polietileno para exportar.');
         return;
       }
-
       const datos = productosFiltrados.map((p) => ({
         Nombre: p.nombre,
         Presentación: p.presentacion,
@@ -228,18 +214,13 @@ export default function Polietileno() {
       const ws = XLSX.utils.json_to_sheet(datos);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Polietileno');
-
       const base64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const uri = FileSystem.cacheDirectory + 'polietileno.xlsx';
-
-      await FileSystem.writeAsStringAsync(uri, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
+      await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando Excel:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo Excel.');
+      Alert.alert('Error', 'No se pudo exportar el archivo Excel: ' + error.message);
     } finally {
       setCargandoExportar(false);
     }
@@ -248,12 +229,10 @@ export default function Polietileno() {
   const exportarPDF = async () => {
     try {
       setCargandoExportar(true);
-
       if (productosFiltrados.length === 0) {
         Alert.alert('Sin datos', 'No hay productos de polietileno para exportar.');
         return;
       }
-
       let html = `
         <html>
           <head>
@@ -281,7 +260,6 @@ export default function Polietileno() {
               </thead>
               <tbody>
       `;
-
       productosFiltrados.forEach((p) => {
         html += `
           <tr>
@@ -294,7 +272,6 @@ export default function Polietileno() {
           </tr>
         `;
       });
-
       html += `
               </tbody>
             </table>
@@ -302,24 +279,27 @@ export default function Polietileno() {
           </body>
         </html>
       `;
-
       const { uri } = await Print.printToFileAsync({ html });
       await Sharing.shareAsync(uri);
     } catch (error) {
       console.error('Error exportando PDF:', error);
-      Alert.alert('Error', 'No se pudo exportar el archivo PDF.');
+      Alert.alert('Error', 'No se pudo exportar el archivo PDF: ' + error.message);
     } finally {
       setCargandoExportar(false);
     }
   };
 
   const editarProducto = (producto) => {
+    if (producto.material !== 'Polietileno') {
+      Alert.alert('Error', 'Este producto no es de Polietileno.');
+      return;
+    }
     setForm({
       id: producto.id,
       material: 'Polietileno',
       presentacion: producto.presentacion,
       tipo: producto.tipo,
-      ancho_cm: producto.ancho_cm ? product.ancho_cm.toString() : '',
+      ancho_cm: producto.ancho_cm ? producto.ancho_cm.toString() : '',
       largo_cm: producto.largo_cm ? producto.largo_cm.toString() : '',
       micraje: producto.micraje.toString(),
       nombre: producto.nombre,
@@ -354,7 +334,6 @@ export default function Polietileno() {
         >
           <Text style={styles.botonTexto}>➕ Agregar Producto</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarExcel}
           style={styles.btnExportarExcel}
@@ -366,7 +345,6 @@ export default function Polietileno() {
             <Text style={styles.botonTexto}>📊 Excel</Text>
           )}
         </TouchableOpacity>
-
         <TouchableOpacity
           onPress={exportarPDF}
           style={styles.btnExportarPDF}
@@ -383,7 +361,6 @@ export default function Polietileno() {
       {mostrarFormulario && (
         <View style={styles.formulario}>
           <Text style={styles.formTitulo}>{form.id ? 'Editar Producto' : 'Nuevo Producto'}</Text>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
@@ -400,40 +377,37 @@ export default function Polietileno() {
             <View style={styles.col2}>
               <Text style={styles.label}>Presentación *</Text>
               <View style={styles.pickerContainer}>
-               <Picker
-  selectedValue={form.presentacion}
-  onValueChange={(value) => handleChange('presentacion', value)}
-  style={styles.picker}
-  enabled={!cargando}
-  mode="dropdown"
->
-  <Picker.Item label="Seleccionar presentación" value="" color="#ffffffff" />
-  {presentaciones.map((p) => (
-    <Picker.Item key={p} label={p} value={p} color="#ffffffff" />
-  ))}
-</Picker>
-
+                <Picker
+                  selectedValue={form.presentacion}
+                  onValueChange={(value) => handleChange('presentacion', value)}
+                  style={styles.picker}
+                  enabled={!cargando}
+                  mode="dropdown"
+                >
+                  <Picker.Item label="Seleccionar presentación" value="" color="#fff" />
+                  {presentaciones.map((p) => (
+                    <Picker.Item key={p} label={p} value={p} color="#fff" />
+                  ))}
+                </Picker>
               </View>
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <Text style={styles.label}>Tipo *</Text>
               <View style={styles.pickerContainer}>
                 <Picker
-  selectedValue={form.tipo}
-  onValueChange={(value) => handleChange('tipo', value)}
-  style={styles.picker}
-  enabled={!cargando}
-  mode="dropdown"
->
-  <Picker.Item label="Seleccionar tipo" value=""color="#000000ff" />
-  {tipos.map((t) => (
-    <Picker.Item key={t} label={t} value={t} color="#000000ff" />
-  ))}
-</Picker>
-
+                  selectedValue={form.tipo}
+                  onValueChange={(value) => handleChange('tipo', value)}
+                  style={styles.picker}
+                  enabled={!cargando}
+                  mode="dropdown"
+                >
+                  <Picker.Item label="Seleccionar tipo" value="" color="#fff" />
+                  {tipos.map((t) => (
+                    <Picker.Item key={t} label={t} value={t} color="#fff" />
+                  ))}
+                </Picker>
               </View>
             </View>
             <View style={styles.col2}>
@@ -450,7 +424,6 @@ export default function Polietileno() {
               />
             </View>
           </View>
-
           <View style={styles.row2}>
             <View style={styles.col2}>
               <PaperInput
@@ -479,7 +452,6 @@ export default function Polietileno() {
               />
             </View>
           </View>
-
           <View style={styles.botonesForm}>
             <TouchableOpacity
               style={styles.btnGuardar}
@@ -660,20 +632,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: '45%',
   },
-pickerContainer: {
-  backgroundColor: '#1e293b',
-  borderRadius: 8,
-  borderWidth: 1,
-  borderColor: '#3b82f6',
-  marginBottom: 12,
-  overflow: 'hidden', // <-- importante para Android
-},
-
-picker: {
-  color: '#ffffff',
-  height: 40,
-  backgroundColor: '#1e293b',
-},
+  pickerContainer: {
+    backgroundColor: '#1e293b',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  picker: {
+    color: '#ffffff',
+    height: 40,
+    backgroundColor: '#1e293b',
+  },
   label: {
     color: '#fff',
     fontSize: 12,

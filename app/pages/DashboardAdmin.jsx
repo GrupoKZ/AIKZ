@@ -486,7 +486,7 @@ export default function DashboardAdmin() {
       },
       floatingToggle: {
         position: 'absolute',
-        top: isPhone ? headerHeight + 10 : '90%',
+        top: isPhone ? headerHeight + 10 : '85%',
         left: isPhone ? 20 : (sidebarExpanded ? sidebarWidth - 20 : 40),
         transform: [{ translateY: -20 }],
         zIndex: 1000,

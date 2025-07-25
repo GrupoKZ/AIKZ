@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react'; // Importa useRef
 import {
   Alert,
   Image,
@@ -12,45 +12,45 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { supabase } from '../../supabase/client';
 
-
 export default function Login() {
   const [correo, setCorreo] = useState('');
   const [contrasena, setContrasena] = useState('');
   const router = useRouter();
+  const contrasenaInputRef = useRef(null); // Crea una referencia para el TextInput de contraseña
 
- const handleLogin = async () => {
-  const { error, data } = await supabase.auth.signInWithPassword({
-    email: correo,
-    password: contrasena,
-  });
+  const handleLogin = async () => {
+    const { error, data } = await supabase.auth.signInWithPassword({
+      email: correo,
+      password: contrasena,
+    });
 
-  if (error) {
-    Alert.alert('Error', error.message);
-    return;
-  }
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
 
-  const userId = data.user.id;
+    const userId = data.user.id;
 
-  // Buscar en la tabla 'usuarios' usando el auth_uid
-  const { data: perfil, error: errorPerfil } = await supabase
-    .from('usuarios')
-    .select('rol')
-    .eq('auth_uid', userId)
-    .single();
+    // Buscar en la tabla 'usuarios' usando el auth_uid
+    const { data: perfil, error: errorPerfil } = await supabase
+      .from('usuarios')
+      .select('rol')
+      .eq('auth_uid', userId)
+      .single();
 
-  if (errorPerfil || !perfil) {
-    Alert.alert('Error', 'No se encontró el perfil del usuario.');
-    return;
-  }
+    if (errorPerfil || !perfil) {
+      Alert.alert('Error', 'No se encontró el perfil del usuario.');
+      return;
+    }
 
-  // Redirigir según el rol
- if (perfil.rol?.toLowerCase().trim() === 'administrador') {
-  router.replace(`/pages/DashboardAdmin?correo=${correo}`);
-} else {
-  router.replace(`/pages/DashboardUsuario?correo=${correo}`);
-}
-};
-   
+    // Redirigir según el rol
+    if (perfil.rol?.toLowerCase().trim() === 'administrador') {
+      router.replace(`/pages/DashboardAdmin?correo=${correo}`);
+    } else {
+      router.replace(`/pages/DashboardUsuario?correo=${correo}`);
+    }
+  };
+
   return (
     <LinearGradient colors={['#0f0c29', '#302b63', '#24243e']} style={styles.container}>
       <Animatable.View
@@ -72,6 +72,9 @@ export default function Login() {
           onChangeText={setCorreo}
           value={correo}
           keyboardType="email-address"
+          returnKeyType="next" // Cambia el botón de "Enter" a "Next"
+          onSubmitEditing={() => contrasenaInputRef.current.focus()} // Enfoca el campo de contraseña
+          blurOnSubmit={false} // Evita que el teclado se cierre al presionar "Next"
         />
         <Text style={styles.label}>Contraseña</Text>
         <TextInput
@@ -81,6 +84,9 @@ export default function Login() {
           onChangeText={setContrasena}
           value={contrasena}
           secureTextEntry
+          returnKeyType="done" // Muestra "Done" o "Entrar" en el teclado
+          onSubmitEditing={handleLogin} // Ejecuta handleLogin al presionar "Enter"
+          ref={contrasenaInputRef} // Asigna la referencia al TextInput
         />
         <TouchableOpacity onPress={handleLogin} style={{ width: '100%' }}>
           <LinearGradient
