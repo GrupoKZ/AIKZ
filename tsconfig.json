@@ -13,5 +13,5 @@
     "**/*.js",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "app/pages/productos.jsx", "app/pages/Clientes.jsx", "supabase.ts", "app/pages/NotasVenta.jsx", "app/App.jsx.jsx", "app/_layout.jsx"  ]
+, "app/pages/productos.jsx", "app/pages/clientes.jsx", "supabase.ts", "app/pages/NotasVenta.jsx", "app/App.jsx.jsx", "app/_layout.jsx"  ]
 }

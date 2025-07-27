@@ -26,7 +26,6 @@ import LogoutButton from '../components/LogoutButton';
 // 🧩 Componentes dinámicos del contenido
 import AlmacenCelofan from '../pages/AlmacenCelofan';
 import AlmacenPolietileno from '../pages/AlmacenPolietileno';
-import Clientes from '../pages/clientes';
 import CuentasPorCobrar from '../pages/CuentasPorCobrar';
 import CuentasPorPagar from '../pages/CuentasPorPagar';
 import Gastos from '../pages/Gastos';
@@ -34,6 +33,7 @@ import Pedidos from '../pages/Pedidos';
 import ProduccionCelofan from '../pages/ProduccionCelofan';
 import ProduccionPolietileno from '../pages/ProduccionPolietileno';
 import Vendedores from '../pages/Vendedores';
+import Clientes from './clientes';
 import Celofan from './Productos/celofan';
 import Polietileno from './Productos/polietileno';
 

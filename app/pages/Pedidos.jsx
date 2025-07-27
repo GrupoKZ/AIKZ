@@ -685,7 +685,7 @@ export default function Pedidos() {
       const { data, error } = await supabase
         .from('clientes')
         .select('id, nombre_contacto, empresa, vendedores_id, dias_credito')
-        
+        .eq('estado', true)
         .order('nombre_contacto', { ascending: true });
 
       if (error) throw error;
