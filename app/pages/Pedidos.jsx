@@ -929,28 +929,33 @@ export default function Pedidos() {
   }, []);
 
   const resetForm = useCallback(() => {
-    setForm({
-      id: null,
-      notas_venta_id: '',
-      cliente_id: '',
-      productos_id: '',
-      cantidad: '',
-      fecha: new Date().toISOString().split('T')[0],
-      folio: '',
-      vendedor_id: '',
-      abono: '',
-      descuento: '0',
-      numero_factura: '',
-    });
-    setAplicarIva(true);
-    setProductosSeleccionados([]);
-    setMostrarFormulario(false);
-    setMostrarFormularioProducto(false);
-    resetDetalleForm();
-    setProductoEditando(null);
-    setIndexEditando(null);
-    setPedidoDetalleOriginal(null);
-  }, [resetDetalleForm]);
+  console.log('Reseteando formulario');
+  
+  setForm({
+    id: null, // ID del pedido individual
+    notas_venta_id: '', // ID de la nota de venta - DEBE ESTAR VACÍO PARA MODO CREACIÓN
+    cliente_id: '',
+    productos_id: '',
+    cantidad: '',
+    fecha: new Date().toISOString().split('T')[0],
+    folio: '',
+    vendedor_id: '',
+    abono: '',
+    descuento: '0',
+    numero_factura: '',
+  });
+  
+  setAplicarIva(true);
+  setProductosSeleccionados([]);
+  setMostrarFormulario(false);
+  setMostrarFormularioProducto(false);
+  resetDetalleForm();
+  setProductoEditando(null);
+  setIndexEditando(null);
+  setPedidoDetalleOriginal(null);
+  
+  console.log('Formulario reseteado completamente');
+}, [resetDetalleForm]);
 
   // Función de cálculo de subtotal
   const calculateSubtotal = useCallback((cantidad, productos_id) => {
@@ -1315,209 +1320,229 @@ export default function Pedidos() {
     setProductosSeleccionados((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const handleGuardar = useCallback(async () => {
-    const { cliente_id, fecha, vendedor_id, id, abono, descuento, numero_factura } = form;
+ // IMPORTANTE: Asegúrate de que esta función esté DENTRO del componente Pedidos
+// y DESPUÉS de la declaración de todos los estados con useState
 
-    if (!cliente_id || !fecha || !vendedor_id) {
-      Alert.alert('Campos requeridos', 'Cliente, fecha y vendedor son obligatorios.');
+const handleGuardar = useCallback(async () => {
+  const { cliente_id, fecha, vendedor_id, id, abono, descuento, numero_factura } = form;
+
+  if (!cliente_id || !fecha || !vendedor_id) {
+    Alert.alert('Campos requeridos', 'Cliente, fecha y vendedor son obligatorios.');
+    return;
+  }
+
+  const abonoNum = Number(abono) || 0;
+  const descuentoNum = Number(descuento) || 0;
+
+  if (productosSeleccionados.length === 0) {
+    Alert.alert('Error', 'Debe agregar al menos un producto.');
+    return;
+  }
+
+  if (abonoNum < 0 || descuentoNum < 0) {
+    Alert.alert('Error', 'El abono y el descuento no pueden ser negativos.');
+    return;
+  }
+
+  try {
+    setCargando(true);
+
+    // Calcular totales
+    let subtotalTotal = productosSeleccionados.reduce((acc, p) => {
+      const subtotalLimpio = p.subtotal.toString().replace(/[^0-9.-]+/g, '');
+      return acc + Number(subtotalLimpio);
+    }, 0);
+
+    const ivaTotal = aplicarIva ? subtotalTotal * 0.16 : 0;
+    const totalFinal = subtotalTotal + ivaTotal - descuentoNum;
+
+    if (totalFinal <= 0) {
+      Alert.alert('Error', 'El total debe ser mayor a 0.');
       return;
     }
 
-    const abonoNum = Number(abono) || 0;
-    const descuentoNum = Number(descuento) || 0;
+    const notaVentaData = {
+      fecha,
+      clientes_id: Number(cliente_id),
+      subtotal: subtotalTotal,
+      iva: ivaTotal,
+      total: totalFinal,
+      descuento: descuentoNum,
+      numero_factura: numero_factura || null,
+    };
 
-    if (productosSeleccionados.length === 0) {
-      Alert.alert('Error', 'Debe agregar al menos un producto.');
-      return;
-    }
-
-    if (abonoNum < 0 || descuentoNum < 0) {
-      Alert.alert('Error', 'El abono y el descuento no pueden ser negativos.');
-      return;
-    }
-
-    try {
-      setCargando(true);
-
-      // Calcular totales
-      let subtotalTotal = productosSeleccionados.reduce((acc, p) => {
-        const subtotalLimpio = p.subtotal.toString().replace(/[^0-9.-]+/g, '');
-        return acc + Number(subtotalLimpio);
-      }, 0);
-
-      const ivaTotal = aplicarIva ? subtotalTotal * 0.16 : 0;
-      const totalFinal = subtotalTotal + ivaTotal - descuentoNum;
-
-      if (totalFinal <= 0) {
-        Alert.alert('Error', 'El total debe ser mayor a 0.');
-        return;
-      }
-
-      const notaVentaData = {
-        fecha,
-        clientes_id: Number(cliente_id),
-        subtotal: subtotalTotal,
-        iva: ivaTotal,
-        total: totalFinal,
-        descuento: descuentoNum,
-        numero_factura: numero_factura || null,
-      };
-
-      let notaVentaId;
+    let notaVentaId;
+    
+    // Determinar si estamos en modo edición
+    const esEdicion = form.notas_venta_id && form.notas_venta_id !== '' && form.notas_venta_id !== null;
+    
+    if (esEdicion) {
+      // MODO EDICIÓN
+      notaVentaId = Number(form.notas_venta_id);
       
-      if (!id) {
-        // Crear nueva nota de venta
-        const { data: notaData, error: notaError } = await supabase
-          .from('notas_venta')
-          .insert([notaVentaData])
-          .select('id')
-          .single();
+      const { error: notaUpdateError } = await supabase
+        .from('notas_venta')
+        .update(notaVentaData)
+        .eq('id', notaVentaId);
 
-        if (notaError) throw notaError;
-        notaVentaId = notaData.id;
-      } else {
-        // Actualizar nota de venta existente
-        notaVentaId = form.notas_venta_id;
-        const { error: notaUpdateError } = await supabase
-          .from('notas_venta')
-          .update(notaVentaData)
-          .eq('id', notaVentaId);
-
-        if (notaUpdateError) throw notaUpdateError;
-
-        // Eliminar pedidos anteriores
-        await supabase
-          .from('pedidos')
-          .delete()
-          .eq('notas_venta_id', notaVentaId);
+      if (notaUpdateError) {
+        throw notaUpdateError;
       }
 
-      // Actualizar vendedor del cliente
-      const cliente = clientes.find((c) => c.id === Number(cliente_id));
-      if (cliente && cliente.vendedores_id !== Number(vendedor_id)) {
-        await supabase
-          .from('clientes')
-          .update({ vendedores_id: Number(vendedor_id) })
-          .eq('id', cliente_id);
-      }
-
-      // Crear pedidos
-      const pedidosData = productosSeleccionados.map(p => ({
-        notas_venta_id: notaVentaId,
-        productos_id: Number(p.productos_id),
-        cantidad: Number(p.cantidad),
-        precio_kilo_venta: Number(p.precio_unitario_sin_iva.replace(/[^0-9.-]+/g, '')),
-        precio_unitario_venta: Number(p.precio_unitario_sin_iva.replace(/[^0-9.-]+/g, '')),
-        precio_iva: Number(p.precio_unitario_con_iva.replace(/[^0-9.-]+/g, '')),
-        importe: Number(p.subtotal.replace(/[^0-9.-]+/g, '')),
-      }));
-
-      const { error: pedidosError } = await supabase
+      // Eliminar pedidos anteriores
+      await supabase
         .from('pedidos')
-        .insert(pedidosData);
+        .delete()
+        .eq('notas_venta_id', notaVentaId);
+        
+    } else {
+      // MODO CREACIÓN
+      const { data: notaData, error: notaError } = await supabase
+        .from('notas_venta')
+        .insert([notaVentaData])
+        .select('id')
+        .single();
 
-      if (pedidosError) throw pedidosError;
-
-      // Registrar abono inicial
-      if (abonoNum > 0) {
-        await supabase
-          .from('pagos')
-          .insert([{
-            notas_venta_id: notaVentaId,
-            fecha: new Date().toISOString().split('T')[0],
-            importe: abonoNum,
-            metodo_pago: 'efectivo',
-          }]);
-      }
-
-      Alert.alert('Éxito', id ? 'Pedido actualizado correctamente' : 'Pedido creado correctamente');
-      
-      // Si estábamos editando desde la vista de detalles, volver a ella
-      if (pedidoDetalleOriginal) {
-        await fetchPedidos();
-        const pedidoActualizado = pedidos.find(p => p.id === pedidoDetalleOriginal.id);
-        if (pedidoActualizado) {
-          setMostrarDetalles(pedidoActualizado);
-        }
-        setPedidoDetalleOriginal(null);
+      if (notaError) {
+        throw notaError;
       }
       
-      resetForm();
-      await fetchPedidos();
-    } catch (error) {
-      console.error('Error en handleGuardar:', error);
-      Alert.alert('Error', 'Error al guardar el pedido: ' + (error.message || 'Error desconocido'));
-    } finally {
-      setCargando(false);
+      notaVentaId = notaData.id;
     }
-  }, [form, productosSeleccionados, aplicarIva, clientes, resetForm, fetchPedidos, pedidoDetalleOriginal, pedidos]);
 
-  const handleEliminar = useCallback(async (id) => {
-    Alert.alert(
-      'Confirmar eliminación', 
-      '¿Estás seguro de que deseas eliminar este pedido completo?', 
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setCargando(true);
+    // Actualizar vendedor del cliente
+    const cliente = clientes.find((c) => c.id === Number(cliente_id));
+    if (cliente && cliente.vendedores_id !== Number(vendedor_id)) {
+      await supabase
+        .from('clientes')
+        .update({ vendedores_id: Number(vendedor_id) })
+        .eq('id', cliente_id);
+    }
 
-              const pedido = pedidos.find((p) => p.id === id);
-              if (!pedido) throw new Error('Pedido no encontrado');
+    // Crear pedidos
+    const pedidosData = productosSeleccionados.map(p => ({
+      notas_venta_id: notaVentaId,
+      productos_id: Number(p.productos_id),
+      cantidad: Number(p.cantidad),
+      precio_kilo_venta: Number(p.precio_unitario_sin_iva.replace(/[^0-9.-]+/g, '')),
+      precio_unitario_venta: Number(p.precio_unitario_sin_iva.replace(/[^0-9.-]+/g, '')),
+      precio_iva: Number(p.precio_unitario_con_iva.replace(/[^0-9.-]+/g, '')),
+      importe: Number(p.subtotal.replace(/[^0-9.-]+/g, '')),
+    }));
 
-              // Eliminar entregas asociadas
-              const { data: pedidosNota } = await supabase
-                .from('pedidos')
-                .select('id')
-                .eq('notas_venta_id', pedido.notas_venta_id);
+    const { error: pedidosError } = await supabase
+      .from('pedidos')
+      .insert(pedidosData);
 
-              for (const ped of pedidosNota || []) {
-                await supabase.from('entregas').delete().eq('pedidos_id', ped.id);
-              }
+    if (pedidosError) {
+      throw pedidosError;
+    }
 
-              // Eliminar pedidos
-              await supabase
-                .from('pedidos')
-                .delete()
-                .eq('notas_venta_id', pedido.notas_venta_id);
+    // Registrar abono inicial
+    if (abonoNum > 0) {
+      await supabase
+        .from('pagos')
+        .insert([{
+          notas_venta_id: notaVentaId,
+          fecha: new Date().toISOString().split('T')[0],
+          importe: abonoNum,
+          metodo_pago: 'efectivo',
+        }]);
+    }
 
-              // Eliminar pagos
-              await supabase
-                .from('pagos')
-                .delete()
-                .eq('notas_venta_id', pedido.notas_venta_id);
+    Alert.alert('Éxito', esEdicion ? 'Pedido actualizado correctamente' : 'Pedido creado correctamente');
+    
+    // Si estábamos editando desde la vista de detalles, volver a ella
+    if (pedidoDetalleOriginal) {
+      await fetchPedidos();
+      const pedidoActualizado = pedidos.find(p => p.notas_venta_id === notaVentaId);
+      if (pedidoActualizado) {
+        setMostrarDetalles(pedidoActualizado);
+      }
+      setPedidoDetalleOriginal(null);
+    }
+    
+    resetForm();
+    await fetchPedidos();
+    
+  } catch (error) {
+    console.error('Error en handleGuardar:', error);
+    
+    let errorMessage = 'Error desconocido';
+    
+    if (error.code === '23505') {
+      errorMessage = 'Error de duplicación de ID. Por favor, intente nuevamente.';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    Alert.alert('Error', 'Error al guardar el pedido: ' + errorMessage);
+  } finally {
+    setCargando(false);
+  }
+}, [form, productosSeleccionados, aplicarIva, clientes, resetForm, fetchPedidos, pedidoDetalleOriginal, pedidos]);
 
-              // Eliminar nota de venta
-              await supabase
-                .from('notas_venta')
-                .delete()
-                .eq('id', pedido.notas_venta_id);
-
-              Alert.alert('Éxito', 'Pedido eliminado correctamente');
-              await fetchPedidos();
-            } catch (error) {
-              console.error('Error al eliminar pedido:', error);
-              Alert.alert('Error', 'Error al eliminar el pedido: ' + error.message);
-            } finally {
-              setCargando(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [pedidos, fetchPedidos]);
+// Debe estar DENTRO del componente, después de todos los useState
+const handleEliminar = useCallback(async (id) => {
+  if (!confirm('¿Estás seguro de que deseas eliminar este pedido?')) {
+    return;
+  }
+  
+  try {
+    setCargando(true);
+    console.log('Eliminando pedido ID:', id);
+    
+    const { error } = await supabase
+      .from('pedidos')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error:', error);
+      alert('Error: ' + error.message);
+    } else {
+      alert('Pedido eliminado');
+      await fetchPedidos();
+    }
+  } catch (error) {
+    console.error('Error:', error);
+    alert('Error: ' + error.message);
+  } finally {
+    setCargando(false);
+  }
+}, [fetchPedidos]);
 
   const handleEntregar = useCallback(async (id) => {
     try {
       setCargando(true);
-      const pedido = pedidos.find((p) => p.id === id);
 
-      if (!pedido) {
-        throw new Error('Pedido no encontrado');
-      }
+      console.log('Eliminando movimientos de almacén...');
+      const { data: entregasData, error: entregasError } = await supabase
+              .from('entregas')
+              .select('id')
+              .in('pedidos_id', await supabase
+                .from('pedidos')
+                .select('id')
+                .eq('notas_venta_id', pedido.notas_venta_id)
+                .then(res => res.data?.map(p => p.id) || [])
+              );
+
+            if (entregasError) {
+              console.error('Error al obtener entregas:', entregasError);
+            }
+
+            
+
+      // Buscar el pedido y su nota de venta
+            const pedido = pedidos.find((p) => p.id === id);
+            if (!pedido) {
+              throw new Error('Pedido no encontrado');
+            }
+
+            console.log('Pedido encontrado:', {
+              pedidoId: pedido.id,
+              notaVentaId: pedido.notas_venta_id
+            });
 
       const unidades = pedido.productos?.material === 'POLIETILENO' ? 'kilos' : 'millares';
 
@@ -1625,36 +1650,53 @@ export default function Pedidos() {
     }
   }, [pedidos, fetchPedidos]);
 
-  const editarPedido = useCallback((pedido) => {
-    if (!pedido?.notas_venta?.clientes) {
-      Alert.alert('Error', 'Información del pedido incompleta');
-      return;
-    }
+ const editarPedido = useCallback((pedido) => {
+  if (!pedido?.notas_venta?.clientes) {
+    Alert.alert('Error', 'Información del pedido incompleta');
+    return;
+  }
 
-    // Guardar referencia del pedido si venimos desde detalles
-    if (mostrarDetalles) {
-      setPedidoDetalleOriginal(pedido);
-    }
+  console.log('Editando pedido:', {
+    pedidoId: pedido.id,
+    notaVentaId: pedido.notas_venta_id,
+    clienteId: pedido.notas_venta.clientes.id
+  });
 
-    setForm({
-      id: pedido.id,
-      notas_venta_id: pedido.notas_venta_id,
-      cliente_id: pedido.notas_venta.clientes.id?.toString() || '',
-      productos_id: '',
-      cantidad: '',
-      fecha: pedido.notas_venta.fecha || new Date().toISOString().split('T')[0],
-      folio: pedido.id?.toString() || '',
-      vendedor_id: pedido.notas_venta.clientes.vendedores_id?.toString() || '',
-      abono: '',
-      descuento: pedido.notas_venta.descuento?.toString() || '0',
-      numero_factura: pedido.notas_venta.numero_factura || '',
-    });
-    
-    fetchPedidosDetalle(pedido.notas_venta_id);
-    setAplicarIva((pedido.notas_venta.iva || 0) > 0);
-    setMostrarFormulario(true);
-    setMostrarDetalles(null);
-  }, [fetchPedidosDetalle, mostrarDetalles]);
+  // Guardar referencia del pedido si venimos desde detalles
+  if (mostrarDetalles) {
+    setPedidoDetalleOriginal(pedido);
+  }
+
+  // Configurar el formulario para modo edición
+  setForm({
+    id: pedido.id, // ID del pedido individual
+    notas_venta_id: pedido.notas_venta_id, // ID de la nota de venta - CLAVE PARA IDENTIFICAR EDICIÓN
+    cliente_id: pedido.notas_venta.clientes.id?.toString() || '',
+    productos_id: '',
+    cantidad: '',
+    fecha: pedido.notas_venta.fecha || new Date().toISOString().split('T')[0],
+    folio: pedido.id?.toString() || '',
+    vendedor_id: pedido.notas_venta.clientes.vendedores_id?.toString() || '',
+    abono: '',
+    descuento: pedido.notas_venta.descuento?.toString() || '0',
+    numero_factura: pedido.notas_venta.numero_factura || '',
+  });
+  
+  console.log('Formulario configurado para edición:', {
+    notas_venta_id: pedido.notas_venta_id,
+    cliente_id: pedido.notas_venta.clientes.id?.toString()
+  });
+  
+  // Cargar los productos existentes de esta nota de venta
+  fetchPedidosDetalle(pedido.notas_venta_id);
+  
+  // Configurar IVA basándose en la nota de venta existente
+  setAplicarIva((pedido.notas_venta.iva || 0) > 0);
+  
+  // Mostrar el formulario
+  setMostrarFormulario(true);
+  setMostrarDetalles(null);
+}, [fetchPedidosDetalle, mostrarDetalles]);
 
   const handleVerDetalles = useCallback((pedido) => {
     if (!pedido?.productos || !pedido?.notas_venta) {
