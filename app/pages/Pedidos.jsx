@@ -1128,6 +1128,7 @@ const [modoEdicion, setModoEdicion] = useState(false);
 const [cambiosPendientes, setCambiosPendientes] = useState(false);
 const [editandoManual, setEditandoManual] = useState(false);
 
+
   // Estados del formulario
   const [form, setForm] = useState({
     id: null,
@@ -2730,55 +2731,181 @@ const handleEliminar = useCallback(async (id) => {
                 </View>
 
                 {/* Información adicional del producto */}
-                {productoSeleccionadoForm && (
-                  <View style={styles.productoInfoContainer}>
-                    <Text style={styles.productoInfoTitle}>Información del Producto</Text>
-                    
-                    <View style={styles.productoInfoGrid}>
-                      <View style={styles.productoInfoItem}>
-                        <Text style={styles.productoInfoLabel}>Medidas:</Text>
-                        <Text style={styles.productoInfoValue}>
-                          {productoSeleccionadoForm.ancho_cm}x{productoSeleccionadoForm.largo_cm}cm
-                        </Text>
-                      </View>
-                      
-                      <View style={styles.productoInfoItem}>
-                        <Text style={styles.productoInfoLabel}>Micraje:</Text>
-                        <Text style={styles.productoInfoValue}>
-                          {productoSeleccionadoForm.micraje_um}μm
-                        </Text>
-                      </View>
+{productoSeleccionadoForm && (
+  <View style={styles.productoInfoContainer}>
+    <Text style={styles.productoInfoTitle}>Información del Producto (Editable)</Text>
+    
+    <View style={styles.row2}>
+      <View style={styles.col2}>
+        <PaperInput
+          label="Ancho (cm)"
+          value={detalleForm.ancho_cm || productoSeleccionadoForm.ancho_cm?.toString() || ''}
+          onChangeText={(text) => {
+            setEditandoManual(true);
+            handleDetalleChange('ancho_cm', text);
+          }}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
+      
+      <View style={styles.col2}>
+        <PaperInput
+          label="Largo (cm)"
+          value={detalleForm.largo_cm || productoSeleccionadoForm.largo_cm?.toString() || ''}
+          onChangeText={(text) => {
+            setEditandoManual(true);
+            handleDetalleChange('largo_cm', text);
+          }}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
+    </View>
 
-                      <View style={styles.productoInfoItem}>
-                        <Text style={styles.productoInfoLabel}>Precio/Kilo:</Text>
-                        <Text style={styles.productoInfoValue}>
-                          ${detalleForm.precio_unitario_sin_iva || '0.00'}
-                        </Text>
-                      </View>
+    <View style={styles.row2}>
+      <View style={styles.col2}>
+        <PaperInput
+          label="Micraje (μm)"
+          value={detalleForm.micraje_um || productoSeleccionadoForm.micraje_um?.toString() || ''}
+          onChangeText={(text) => {
+            setEditandoManual(true);
+            handleDetalleChange('micraje_um', text);
+          }}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
 
-                      <View style={styles.productoInfoItem}>
-                        <Text style={styles.productoInfoLabel}>Precio con IVA:</Text>
-                        <Text style={styles.productoInfoValue}>
-                          ${detalleForm.precio_unitario_con_iva || '0.00'}
-                        </Text>
-                      </View>
+      <View style={styles.col2}>
+        <PaperInput
+          label="Precio/Kilo"
+          value={detalleForm.precio_unitario_sin_iva || '0.00'}
+          onChangeText={(text) => {
+            setEditandoManual(true);
+            handleDetalleChange('precio_unitario_sin_iva', text);
+          }}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
+    </View>
 
-                      <View style={styles.productoInfoItem}>
-                        <Text style={styles.productoInfoLabel}>Kg por millar:</Text>
-                        <Text style={styles.productoInfoValue}>
-                          {detalleForm.kg_por_millar || '0.00'}
-                        </Text>
-                      </View>
+    <View style={styles.row2}>
+      <View style={styles.col2}>
+        <PaperInput
+          label="Precio con IVA"
+          value={detalleForm.precio_unitario_con_iva || '0.00'}
+          onChangeText={(text) => {
+            setEditandoManual(true);
+            handleDetalleChange('precio_unitario_con_iva', text);
+          }}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
 
-                      <View style={[styles.productoInfoItem, styles.productoInfoTotal]}>
-                        <Text style={styles.productoInfoLabel}>Importe Total:</Text>
-                        <Text style={[styles.productoInfoValue, styles.productoInfoTotalValue]}>
-                          ${detalleForm.importe_total || '0.00'}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                )}
+      <View style={styles.col2}>
+        <PaperInput
+          label="Kg por millar"
+          value={detalleForm.kg_por_millar || '0.00'}
+          onChangeText={(text) => handleDetalleChange('kg_por_millar', text)}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
+    </View>
+
+    <PaperInput
+      label="Importe Total"
+      value={detalleForm.importe_total || '0.00'}
+      onChangeText={(text) => {
+        setEditandoManual(true);
+        handleDetalleChange('importe_total', text);
+      }}
+      mode="outlined"
+      style={[styles.input, { backgroundColor: '#4b5563' }]}
+      keyboardType="numeric"
+      theme={{
+        ...inputTheme,
+        colors: { ...inputTheme.colors, primary: '#3b82f6', text: '#60a5fa' }
+      }}
+      textColor="#60a5fa"
+      disabled={cargando}
+    />
+
+    {/* Botón para recalcular automáticamente */}
+    <TouchableOpacity
+      style={styles.btnRecalcular}
+      onPress={() => {
+        setEditandoManual(false);
+        if (detalleForm.cantidad) {
+          const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
+          if (producto) {
+            const cantidad = Number(detalleForm.cantidad) || 0;
+            
+            let precioPorKilo = 50;
+            const material = (producto.material || '').toUpperCase();
+            switch (material) {
+              case 'CELOFAN':
+                precioPorKilo = 45;
+                break;
+              case 'POLIETILENO':
+                precioPorKilo = 35;
+                break;
+              default:
+                precioPorKilo = 50;
+            }
+
+            const precioUnitario = material === 'CELOFAN' 
+              ? calcularPrecioUnitario(producto, precioPorKilo)
+              : precioPorKilo;
+
+            const precioConIva = precioUnitario * 1.16;
+            const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
+            const kgPorMillar = calcularKgPorMillar(producto);
+
+            handleDetalleChange('precio_unitario_sin_iva', precioUnitario.toFixed(2));
+            handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
+            handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
+            handleDetalleChange('importe_total', importeTotal.toFixed(2));
+            handleDetalleChange('ancho_cm', producto.ancho_cm?.toString() || '');
+            handleDetalleChange('largo_cm', producto.largo_cm?.toString() || '');
+            handleDetalleChange('micraje_um', producto.micraje_um?.toString() || '');
+          }
+        }
+      }}
+      disabled={cargando}
+    >
+      <Ionicons name="refresh" size={16} color="#ffffff" />
+      <Text style={styles.btnRecalcularTexto}>Recalcular Auto</Text>
+    </TouchableOpacity>
+  </View>
+)}
 
                 <View style={styles.botonesFormularioProducto}>
                   <TouchableOpacity
