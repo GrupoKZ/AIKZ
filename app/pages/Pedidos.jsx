@@ -141,18 +141,35 @@ const PedidoDetails = ({
   handleCancelarEdicion,
   productoEditando,
   indexEditando,
+  modoEdicion,
+  productosTemporales,
+  cambiosPendientes,
+  iniciarModoEdicion,
+  cancelarEdicion,
+  guardarCambiosPedido,
+  handleAñadirProductoTemporal,
+  handleEliminarProductoTemporal,
+  handleEditarProductoTemporal,
 }) => {
   // Calcular valores derivados sin hooks condicionales
   const vendedor = vendedores.find((v) => v.id === pedido?.notas_venta?.clientes?.vendedores_id) || null;
   const pagado = (pedido?.notas_venta?.pago_pendiente || 0) <= 0;
 
-  const subtotalTotal = productosSeleccionados.reduce((acc, p) => {
+ const subtotalTotal = (() => {
+  const productosActivos = modoEdicion ? productosTemporales : productosSeleccionados;
+  return productosActivos.reduce((acc, p) => {
     const subtotalLimpio = (p.subtotal || '0').toString().replace(/[^0-9.-]+/g, '');
     return acc + (Number(subtotalLimpio) || 0);
   }, 0);
+})();
 
-  const iva = subtotalTotal * 0.16;
-  const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
+const iva = subtotalTotal * 0.16;
+const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
+
+
+
+
+
 
   // Cargar productos del pedido al montar
   useEffect(() => {
@@ -162,43 +179,49 @@ const PedidoDetails = ({
   }, [pedido?.notas_venta_id, fetchPedidosDetalle]);
 
   // Efecto para mostrar detalles del producto cuando se selecciona uno
-  useEffect(() => {
-    if (detalleForm.productos_id) {
-      const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
-      if (producto) {
-        const cantidad = Number(detalleForm.cantidad) || 0;
-        
-        // Calcular precios
-        let precioPorKilo = 50;
-        const material = (producto.material || '').toUpperCase();
-        switch (material) {
-          case 'CELOFAN':
-            precioPorKilo = 45;
-            break;
-          case 'POLIETILENO':
-            precioPorKilo = 35;
-            break;
-          default:
-            precioPorKilo = 50;
-        }
+  // Agregar estado para controlar si el usuario está editando manualmente
+const [editandoManual, setEditandoManual] = useState(false);
 
-        const precioUnitario = material === 'CELOFAN' 
-          ? calcularPrecioUnitario(producto, precioPorKilo)
-          : precioPorKilo;
-
-        const precioConIva = precioUnitario * 1.16;
-        const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
-        const kgPorMillar = calcularKgPorMillar(producto);
-
-        // Actualizar los campos calculados
-        handleDetalleChange('precio_unitario_sin_iva', precioUnitario.toFixed(2));
-        handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
-        handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
-        handleDetalleChange('importe_total', importeTotal.toFixed(2));
+useEffect(() => {
+  // Solo calcular automáticamente si no estamos editando manualmente
+  if (detalleForm.productos_id && !editandoManual) {
+    const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
+    if (producto) {
+      const cantidad = Number(detalleForm.cantidad) || 0;
+      
+      // Calcular precios
+      let precioPorKilo = 50;
+      const material = (producto.material || '').toUpperCase();
+      switch (material) {
+        case 'CELOFAN':
+          precioPorKilo = 45;
+          break;
+        case 'POLIETILENO':
+          precioPorKilo = 35;
+          break;
+        default:
+          precioPorKilo = 50;
       }
-    }
-  }, [detalleForm.productos_id, detalleForm.cantidad, productos, handleDetalleChange]);
 
+      const precioUnitario = material === 'CELOFAN' 
+        ? calcularPrecioUnitario(producto, precioPorKilo)
+        : precioPorKilo;
+
+      const precioConIva = precioUnitario * 1.16;
+      const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
+      const kgPorMillar = calcularKgPorMillar(producto);
+
+      // Actualizar los campos calculados
+      handleDetalleChange('precio_unitario_sin_iva', precioUnitario.toFixed(2));
+      handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
+      handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
+      handleDetalleChange('importe_total', importeTotal.toFixed(2));
+      handleDetalleChange('ancho_cm', producto.ancho_cm?.toString() || '');
+      handleDetalleChange('largo_cm', producto.largo_cm?.toString() || '');
+      handleDetalleChange('micraje_um', producto.micraje_um?.toString() || '');
+    }
+  }
+}, [detalleForm.productos_id, detalleForm.cantidad, productos, handleDetalleChange, editandoManual]);
   const exportarPDF = async () => {
     if (!pedido) return;
     
@@ -396,10 +419,16 @@ const PedidoDetails = ({
             <div class="totals-section">
               <div class="total-row">
                 <span>Subtotal:</span>
-                <span>$${subtotalTotal.toLocaleString('es-MX', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2
-                })}</span>
+                <span>$${(() => {
+  const productosActivos = productosSeleccionados;
+  return productosActivos.reduce((acc, p) => {
+    const subtotalLimpio = (p.subtotal || '0').toString().replace(/[^0-9.-]+/g, '');
+    return acc + (Number(subtotalLimpio) || 0);
+  }, 0).toLocaleString('es-MX', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+})()}</span>
               </div>
               <div class="total-row">
                 <span>IVA (16%):</span>
@@ -503,19 +532,62 @@ const PedidoDetails = ({
           </View>
         </View>
 
-        {/* Sección de productos */}
-        <View style={styles.productosSection}>
-          <View style={styles.productosHeader}>
-            <Text style={styles.subTitle}>Productos del Pedido</Text>
-            <TouchableOpacity
-              style={styles.btnAnadirProducto}
-              onPress={() => setMostrarFormularioProducto(true)}
-              disabled={cargando}
-            >
-              <Ionicons name="add" size={16} color="#ffffff" />
-              <Text style={styles.btnAnadirTexto}>Añadir</Text>
-            </TouchableOpacity>
-          </View>
+     {/* Sección de productos */}
+<View style={styles.productosSection}>
+<View style={styles.productosHeader}>
+  <Text style={styles.subTitle}>Productos del Pedido</Text>
+  <View style={styles.botonesProductosHeader}>
+    <TouchableOpacity
+      style={styles.btnAnadirProducto}
+      onPress={() => {
+        if (!modoEdicion) {
+          iniciarModoEdicion();
+        }
+        setMostrarFormularioProducto(true);
+      }}
+      disabled={cargando}
+    >
+      <Ionicons name="add" size={16} color="#ffffff" />
+      <Text style={styles.btnAnadirTexto}>Añadir</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity
+      style={[styles.btnGuardar, { opacity: cambiosPendientes ? 1 : 0.6 }]}
+      onPress={() => {
+        if (!modoEdicion) {
+          iniciarModoEdicion();
+        }
+        guardarCambiosPedido();
+      }}
+      disabled={cargando || !cambiosPendientes}
+    >
+      <Ionicons name="checkmark" size={16} color="#ffffff" />
+      <Text style={styles.btnAnadirTexto}>Guardar</Text>
+    </TouchableOpacity>
+    
+    <TouchableOpacity
+      style={styles.btnCancelarProducto}
+      onPress={cancelarEdicion}
+      disabled={cargando}
+    >
+      <Ionicons name="close" size={16} color="#ffffff" />
+      <Text style={styles.btnAnadirTexto}>Cancelar</Text>
+    </TouchableOpacity>
+  </View>
+</View>
+
+  {/* Mostrar mensaje si hay cambios pendientes */}
+  {cambiosPendientes && (
+    <View style={styles.cambiosPendientesAlert}>
+      <Ionicons name="warning" size={16} color="#f59e0b" />
+      <Text style={styles.cambiosPendientesText}>
+        Tienes cambios sin guardar. Presiona "Guardar" para confirmar.
+      </Text>
+    </View>
+  )}
+
+  {/* Formulario para añadir/editar productos (solo en modo edición) */}
+
 
           {/* Formulario para añadir/editar productos */}
           {mostrarFormularioProducto && (
@@ -559,62 +631,186 @@ const PedidoDetails = ({
                   />
                 </View>
               </View>
+{/* Información adicional del producto */}
+{productoSeleccionado && (
+  <View style={styles.productoInfoContainer}>
+    <Text style={styles.productoInfoTitle}>Información del Producto (Editable)</Text>
+    
+    <View style={styles.row2}>
+      <View style={styles.col2}>
+        <PaperInput
+          label="Ancho (cm)"
+          value={detalleForm.ancho_cm || productoSeleccionado.ancho_cm?.toString() || ''}
+          onChangeText={(text) => handleDetalleChange('ancho_cm', text)}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
+      
+      <View style={styles.col2}>
+      <PaperInput
+  label="Largo (cm)"
+  value={detalleForm.largo_cm || productoSeleccionado.largo_cm?.toString() || ''}
+  onChangeText={(text) => {
+    setEditandoManual(true); // Marcar como edición manual
+    handleDetalleChange('largo_cm', text);
+  }}
+  mode="outlined"
+  style={styles.input}
+  keyboardType="numeric"
+  theme={inputTheme}
+  textColor="#ffffff"
+  disabled={cargando}
+/>
+      </View>
+    </View>
 
-              {/* Información adicional del producto */}
-              {productoSeleccionado && (
-                <View style={styles.productoInfoContainer}>
-                  <Text style={styles.productoInfoTitle}>Información del Producto</Text>
-                  
-                  <View style={styles.productoInfoGrid}>
-                    <View style={styles.productoInfoItem}>
-                      <Text style={styles.productoInfoLabel}>Medidas:</Text>
-                      <Text style={styles.productoInfoValue}>
-                        {productoSeleccionado.ancho_cm}x{productoSeleccionado.largo_cm}cm
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.productoInfoItem}>
-                      <Text style={styles.productoInfoLabel}>Micraje:</Text>
-                      <Text style={styles.productoInfoValue}>
-                        {productoSeleccionado.micraje_um}μm
-                      </Text>
-                    </View>
+    <View style={styles.row2}>
+      <View style={styles.col2}>
+       <PaperInput
+  label="Micraje (μm)"
+  value={detalleForm.micraje_um || productoSeleccionado.micraje_um?.toString() || ''}
+  onChangeText={(text) => {
+    setEditandoManual(true); // Marcar como edición manual
+    handleDetalleChange('micraje_um', text);
+  }}
+          mode="outlined"
+  style={styles.input}
+  keyboardType="numeric"
+  theme={inputTheme}
+  textColor="#ffffff"
+  disabled={cargando}
+/>
+      </View>
 
-                    <View style={styles.productoInfoItem}>
-                      <Text style={styles.productoInfoLabel}>Precio/Kilo:</Text>
-                      <Text style={styles.productoInfoValue}>
-                        ${detalleForm.precio_unitario_sin_iva || '0.00'}
-                      </Text>
-                    </View>
+      <View style={styles.col2}>
+        <PaperInput
+  label="Precio/Kilo"
+  value={detalleForm.precio_unitario_sin_iva || '0.00'}
+  onChangeText={(text) => {
+    setEditandoManual(true); // Marcar como edición manual
+    handleDetalleChange('precio_unitario_sin_iva', text);
+  }}
+          mode="outlined"
+  style={styles.input}
+  keyboardType="numeric"
+  theme={inputTheme}
+  textColor="#ffffff"
+  disabled={cargando}
+/>
+      </View>
+    </View>
 
-                    <View style={styles.productoInfoItem}>
-                      <Text style={styles.productoInfoLabel}>Precio con IVA:</Text>
-                      <Text style={styles.productoInfoValue}>
-                        ${detalleForm.precio_unitario_con_iva || '0.00'}
-                      </Text>
-                    </View>
+    <View style={styles.row2}>
+      <View style={styles.col2}>
+        <PaperInput
+  label="Precio con IVA"
+  value={detalleForm.precio_unitario_con_iva || '0.00'}
+  onChangeText={(text) => {
+    setEditandoManual(true); // Marcar como edición manual
+    handleDetalleChange('precio_unitario_con_iva', text);
+  }}
+          mode="outlined"
+  style={styles.input}
+  keyboardType="numeric"
+  theme={inputTheme}
+  textColor="#ffffff"
+  disabled={cargando}
+/>
+      </View>
 
-                    <View style={styles.productoInfoItem}>
-                      <Text style={styles.productoInfoLabel}>Kg por millar:</Text>
-                      <Text style={styles.productoInfoValue}>
-                        {detalleForm.kg_por_millar || '0.00'}
-                      </Text>
-                    </View>
+      <View style={styles.col2}>
+        <PaperInput
+          label="Kg por millar"
+          value={detalleForm.kg_por_millar || '0.00'}
+          onChangeText={(text) => handleDetalleChange('kg_por_millar', text)}
+          mode="outlined"
+          style={styles.input}
+          keyboardType="numeric"
+          theme={inputTheme}
+          textColor="#ffffff"
+          disabled={cargando}
+        />
+      </View>
+    </View>
 
-                    <View style={[styles.productoInfoItem, styles.productoInfoTotal]}>
-                      <Text style={styles.productoInfoLabel}>Importe Total:</Text>
-                      <Text style={[styles.productoInfoValue, styles.productoInfoTotalValue]}>
-                        ${detalleForm.importe_total || '0.00'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              )}
+    <PaperInput
+  label="Importe Total"
+  value={detalleForm.importe_total || '0.00'}
+  onChangeText={(text) => {
+    setEditandoManual(true); // Marcar como edición manual
+    handleDetalleChange('importe_total', text);
+  }}
+  mode="outlined"
+  style={[styles.input, { backgroundColor: '#4b5563' }]}
+  keyboardType="numeric"
+  theme={{
+    ...inputTheme,
+    colors: { ...inputTheme.colors, primary: '#3b82f6', text: '#60a5fa' }
+  }}
+  textColor="#60a5fa"
+  disabled={cargando}
+/>
+
+    {/* Botón para recalcular automáticamente */}
+    <TouchableOpacity
+      style={styles.btnRecalcular}
+      onPress={() => {
+        setEditandoManual(false); // Permitir cálculo automático
+        if (detalleForm.cantidad) 
+          {
+          // Forzar recálculo automático
+          const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
+          if (producto) {
+            const cantidad = Number(detalleForm.cantidad) || 0;
+            
+            let precioPorKilo = 50;
+            const material = (producto.material || '').toUpperCase();
+            switch (material) {
+              case 'CELOFAN':
+                precioPorKilo = 45;
+                break;
+              case 'POLIETILENO':
+                precioPorKilo = 35;
+                break;
+              default:
+                precioPorKilo = 50;
+            }
+
+            const precioUnitario = material === 'CELOFAN' 
+              ? calcularPrecioUnitario(producto, precioPorKilo)
+              : precioPorKilo;
+
+            const precioConIva = precioUnitario * 1.16;
+            const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
+            const kgPorMillar = calcularKgPorMillar(producto);
+
+            handleDetalleChange('precio_unitario_sin_iva', precioUnitario.toFixed(2));
+            handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
+            handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
+            handleDetalleChange('importe_total', importeTotal.toFixed(2));
+            handleDetalleChange('ancho_cm', producto.ancho_cm?.toString() || '');
+            handleDetalleChange('largo_cm', producto.largo_cm?.toString() || '');
+            handleDetalleChange('micraje_um', producto.micraje_um?.toString() || '');
+          }
+        }
+      }}
+      disabled={cargando}
+    >
+      <Ionicons name="refresh" size={16} color="#ffffff" />
+      <Text style={styles.btnRecalcularTexto}>Recalcular Auto</Text>
+    </TouchableOpacity>
+  </View>
+)}
 
               <View style={styles.botonesFormularioProducto}>
                 <TouchableOpacity
                   style={styles.btnGuardarProducto}
-                  onPress={handleAñadirProducto}
+                  onPress={handleAñadirProductoTemporal} 
                   disabled={cargando}
                 >
                   {cargando ? (
@@ -704,21 +900,34 @@ const PedidoDetails = ({
                     </View>
                     
                     <View style={[styles.tablaCelda, { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 4 }]}>
-                      <TouchableOpacity
-                        style={styles.accionBtn}
-                        onPress={() => onEditarProducto(producto, index)}
-                        disabled={cargando}
-                      >
-                        <Ionicons name="pencil" size={12} color="#6b7280" />
-                      </TouchableOpacity>
+
+
+
+<TouchableOpacity
+  style={styles.accionBtn}
+  onPress={() => {
+    if (!modoEdicion) {
+      iniciarModoEdicion();
+    }
+    handleEditarProductoTemporal(producto, index);
+  }}
+  disabled={cargando}
+>
+  <Ionicons name="pencil" size={12} color="#6b7280" />
+</TouchableOpacity>
                       
-                      <TouchableOpacity
-                        style={styles.accionBtnEliminar}
-                        onPress={() => handleEliminarProducto(index)}
-                        disabled={cargando}
-                      >
-                        <Ionicons name="trash" size={12} color="#ffffff" />
-                      </TouchableOpacity>
+  <TouchableOpacity
+  style={styles.accionBtnEliminar}
+  onPress={() => {
+    if (!modoEdicion) {
+      iniciarModoEdicion();
+    }
+    handleEliminarProductoTemporal(index);
+  }}
+  disabled={cargando}
+>
+  <Ionicons name="trash" size={12} color="#ffffff" />
+</TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -731,103 +940,128 @@ const PedidoDetails = ({
           )}
         </View>
 
-        {/* Resumen financiero */}
-        <View style={styles.resumenContainer}>
-          <View style={styles.resumenIzquierda}>
-            <View style={styles.resumenFila}>
-              <Text style={styles.resumenLabel}>Subtotal:</Text>
-              <Text style={styles.resumenValor}>
-                ${subtotalTotal.toLocaleString('es-MX', { 
-                  minimumFractionDigits: 2, 
-                  maximumFractionDigits: 2 
-                })}
-              </Text>
-            </View>
-            <View style={styles.resumenFila}>
-              <Text style={styles.ivaLabel}>IVA (16%):</Text>
-              <Text style={styles.ivaValor}>
-                ${iva.toLocaleString('es-MX', { 
-                  minimumFractionDigits: 2, 
-                  maximumFractionDigits: 2 
-                })}
-              </Text>
-            </View>
-            <View style={styles.resumenFila}>
-              <Text style={styles.resumenLabel}>Descuento:</Text>
-              <Text style={styles.resumenValor}>
-                ${(pedido.notas_venta?.descuento || 0).toLocaleString('es-MX', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </Text>
-            </View>
-            <View style={[styles.resumenFila, { borderTopWidth: 1, borderTopColor: '#4b5563', paddingTop: 8, marginTop: 8 }]}>
-              <Text style={styles.totalLabel}>Total:</Text>
-              <Text style={styles.totalValor}>
-                ${total.toLocaleString('es-MX', { 
-                  minimumFractionDigits: 2, 
-                  maximumFractionDigits: 2 
-                })}
-              </Text>
-            </View>
-            <View style={styles.resumenFila}>
-              <Text style={styles.resumenLabel}>Pago pendiente:</Text>
-              <Text style={[styles.resumenValor, { color: pagado ? '#22c55e' : '#ef4444' }]}>
-                ${(pedido.notas_venta?.pago_pendiente || 0).toLocaleString('es-MX', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </Text>
-            </View>
-          </View>
+     {/* Resumen financiero */}
+<View style={styles.resumenContainer}>
+  <View style={styles.resumenIzquierda}>
+    <View style={styles.resumenFila}>
+      <Text style={styles.resumenLabel}>Total parcial:</Text>
+      <Text style={styles.resumenValor}>
+        ${(() => {
+          const productosActivos = modoEdicion ? productosTemporales : productosSeleccionados;
+          const subtotal = productosActivos.reduce((acc, p) => {
+            const subtotalLimpio = (p.subtotal || '0').toString().replace(/[^0-9.-]+/g, '');
+            return acc + (Number(subtotalLimpio) || 0);
+          }, 0);
+          return subtotal.toLocaleString('es-MX', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+          });
+        })()}
+      </Text>
+    </View>
+    <View style={styles.resumenFila}>
+      <Text style={styles.ivaLabel}>IVA (16%):</Text>
+      <Text style={styles.ivaValor}>
+        ${(() => {
+          const productosActivos = modoEdicion ? productosTemporales : productosSeleccionados;
+          const subtotal = productosActivos.reduce((acc, p) => {
+            const subtotalLimpio = (p.subtotal || '0').toString().replace(/[^0-9.-]+/g, '');
+            return acc + (Number(subtotalLimpio) || 0);
+          }, 0);
+          const iva = subtotal * 0.16;
+          return iva.toLocaleString('es-MX', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+          });
+        })()}
+      </Text>
+    </View>
+    <View style={styles.resumenFila}>
+      <Text style={styles.resumenLabel}>Descuento:</Text>
+      <Text style={styles.resumenValor}>
+        ${(pedido?.notas_venta?.descuento || 0).toLocaleString('es-MX', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </Text>
+    </View>
+    <View style={[styles.resumenFila, { borderTopWidth: 1, borderTopColor: '#4b5563', paddingTop: 8, marginTop: 8 }]}>
+      <Text style={styles.totalLabel}>Total:</Text>
+      <Text style={styles.totalValor}>
+        ${(() => {
+          const productosActivos = modoEdicion ? productosTemporales : productosSeleccionados;
+          const subtotal = productosActivos.reduce((acc, p) => {
+            const subtotalLimpio = (p.subtotal || '0').toString().replace(/[^0-9.-]+/g, '');
+            return acc + (Number(subtotalLimpio) || 0);
+          }, 0);
+          const iva = subtotal * 0.16;
+          const descuento = pedido?.notas_venta?.descuento || 0;
+          const total = subtotal + iva - descuento;
+          return total.toLocaleString('es-MX', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+          });
+        })()}
+      </Text>
+    </View>
+    <View style={styles.resumenFila}>
+      <Text style={styles.resumenLabel}>Pago pendiente:</Text>
+      <Text style={[styles.resumenValor, { color: pagado ? '#22c55e' : '#ef4444' }]}>
+        ${(pedido?.notas_venta?.pago_pendiente || 0).toLocaleString('es-MX', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
+      </Text>
+    </View>
+  </View>
 
-          <View style={styles.resumenDerecha}>
-            <View style={styles.estadoIndicadores}>
-              <View style={styles.estadoFila}>
-                <View style={[styles.estadoBarra, { backgroundColor: pagado ? '#22c55e' : '#6b7280' }]} />
-                <Text style={styles.estadoTexto}>Depósitos</Text>
-              </View>
-              <View style={styles.estadoFila}>
-                <View style={[styles.estadoBarra, { backgroundColor: pedido.entregas?.length > 0 ? '#3b82f6' : '#6b7280' }]} />
-                <Text style={styles.estadoTexto}>Entrega</Text>
-              </View>
-              <View style={styles.estadoFila}>
-                <View style={[styles.estadoBarra, { backgroundColor: '#eab308' }]} />
-                <Text style={styles.estadoTexto}>Crédito</Text>
-              </View>
-            </View>
+  <View style={styles.resumenDerecha}>
+    <View style={styles.estadoIndicadores}>
+      <View style={styles.estadoFila}>
+        <View style={[styles.estadoBarra, { backgroundColor: pagado ? '#22c55e' : '#6b7280' }]} />
+        <Text style={styles.estadoTexto}>Depósitos</Text>
+      </View>
+      <View style={styles.estadoFila}>
+        <View style={[styles.estadoBarra, { backgroundColor: pedido?.entregas?.length > 0 ? '#3b82f6' : '#6b7280' }]} />
+        <Text style={styles.estadoTexto}>Entrega</Text>
+      </View>
+      <View style={styles.estadoFila}>
+        <View style={[styles.estadoBarra, { backgroundColor: '#eab308' }]} />
+        <Text style={styles.estadoTexto}>Crédito</Text>
+      </View>
+    </View>
 
-            <View style={styles.botonesEstado}>
-              <TouchableOpacity 
-                style={[styles.btnEstado, styles.btnAbonar]} 
-                onPress={() => onAbonar(pedido.id)} 
-                disabled={cargando || pagado}
-              >
-                <Ionicons name="cash" size={14} color="#ffffff" />
-                <Text style={styles.btnEstadoTexto}>Abonar</Text>
-              </TouchableOpacity>
+    <View style={styles.botonesEstado}>
+      <TouchableOpacity 
+        style={[styles.btnEstado, styles.btnAbonar]} 
+        onPress={() => onAbonar(pedido?.id)} 
+        disabled={cargando || pagado}
+      >
+        <Ionicons name="cash" size={14} color="#ffffff" />
+        <Text style={styles.btnEstadoTexto}>Abonar</Text>
+      </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.btnEstado, pagado ? styles.btnPagado : styles.btnSinPagar]} 
-                disabled={true}
-              >
-                <Ionicons name={pagado ? "checkmark-circle" : "time"} size={14} color="#ffffff" />
-                <Text style={styles.btnEstadoTexto}>{pagado ? 'Pagado' : 'Pendiente'}</Text>
-              </TouchableOpacity>
+      <TouchableOpacity 
+        style={[styles.btnEstado, pagado ? styles.btnPagado : styles.btnSinPagar]} 
+        disabled={true}
+      >
+        <Ionicons name={pagado ? "checkmark-circle" : "time"} size={14} color="#ffffff" />
+        <Text style={styles.btnEstadoTexto}>{pagado ? 'Pagado' : 'Pendiente'}</Text>
+      </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.btnEstado, pedido.entregas?.length > 0 ? styles.btnEntregado : styles.btnPendienteEntrega]}
-                onPress={() => !pedido.entregas?.length && onEntregar(pedido.id)}
-                disabled={cargando || pedido.entregas?.length > 0}
-              >
-                <Ionicons name={pedido.entregas?.length > 0 ? "cube" : "cube-outline"} size={14} color="#ffffff" />
-                <Text style={styles.btnEstadoTexto}>
-                  {pedido.entregas?.length > 0 ? 'Entregado' : 'Entregar'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+      <TouchableOpacity
+        style={[styles.btnEstado, pedido?.entregas?.length > 0 ? styles.btnEntregado : styles.btnPendienteEntrega]}
+        onPress={() => !pedido?.entregas?.length && onEntregar(pedido?.id)}
+        disabled={cargando || pedido?.entregas?.length > 0}
+      >
+        <Ionicons name={pedido?.entregas?.length > 0 ? "cube" : "cube-outline"} size={14} color="#ffffff" />
+        <Text style={styles.btnEstadoTexto}>
+          {pedido?.entregas?.length > 0 ? 'Entregado' : 'Entregar'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+</View>
 
         {/* Botones de acción */}
         <View style={styles.botonesAcciones}>
@@ -889,6 +1123,10 @@ export default function Pedidos() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [pedidoDetalleOriginal, setPedidoDetalleOriginal] = useState(null);
+  const [productosTemporales, setProductosTemporales] = useState([]);
+const [modoEdicion, setModoEdicion] = useState(false);
+const [cambiosPendientes, setCambiosPendientes] = useState(false);
+const [editandoManual, setEditandoManual] = useState(false);
 
   // Estados del formulario
   const [form, setForm] = useState({
@@ -906,34 +1144,41 @@ export default function Pedidos() {
   });
 
   const [detalleForm, setDetalleForm] = useState({
+  productos_id: '',
+  cantidad: '',
+  precio_unitario_sin_iva: '',
+  precio_unitario_con_iva: '',
+  kg_por_millar: '',
+  importe_total: '',
+  ancho_cm: '',
+  largo_cm: '',
+  micraje_um: '',
+});
+
+  const [productosSeleccionados, setProductosSeleccionados] = useState([]);
+
+  // TODAS LAS FUNCIONES CON useCallback DEBEN ESTAR AQUÍ
+  const resetDetalleForm = useCallback(() => {
+  setDetalleForm({
     productos_id: '',
     cantidad: '',
     precio_unitario_sin_iva: '',
     precio_unitario_con_iva: '',
     kg_por_millar: '',
     importe_total: '',
+    ancho_cm: '',
+    largo_cm: '',
+    micraje_um: '',
   });
+  setEditandoManual(false); // Resetear modo manual
+}, []);
 
-  const [productosSeleccionados, setProductosSeleccionados] = useState([]);
-
-  // TODAS LAS FUNCIONES CON useCallback DEBEN ESTAR AQUÍ
-  const resetDetalleForm = useCallback(() => {
-    setDetalleForm({
-      productos_id: '',
-      cantidad: '',
-      precio_unitario_sin_iva: '',
-      precio_unitario_con_iva: '',
-      kg_por_millar: '',
-      importe_total: '',
-    });
-  }, []);
-
-  const resetForm = useCallback(() => {
+const resetForm = useCallback(() => {
   console.log('Reseteando formulario');
   
   setForm({
-    id: null, // ID del pedido individual
-    notas_venta_id: '', // ID de la nota de venta - DEBE ESTAR VACÍO PARA MODO CREACIÓN
+    id: null,
+    notas_venta_id: '',
     cliente_id: '',
     productos_id: '',
     cantidad: '',
@@ -953,6 +1198,9 @@ export default function Pedidos() {
   setProductoEditando(null);
   setIndexEditando(null);
   setPedidoDetalleOriginal(null);
+  setModoEdicion(false);
+  setProductosTemporales([]);
+  setCambiosPendientes(false);
   
   console.log('Formulario reseteado completamente');
 }, [resetDetalleForm]);
@@ -1136,6 +1384,25 @@ export default function Pedidos() {
     }
   }, []);
 
+  const iniciarModoEdicion = useCallback(() => {
+  setModoEdicion(true);
+  setProductosTemporales([...productosSeleccionados]);
+  setCambiosPendientes(false);
+}, [productosSeleccionados]);
+
+const cancelarEdicion = useCallback(() => {
+  setModoEdicion(false);
+  setProductosTemporales([]);
+  setCambiosPendientes(false);
+  setMostrarFormularioProducto(false);
+  resetDetalleForm();
+  setProductoEditando(null);
+  setIndexEditando(null);
+}, [resetDetalleForm]);
+
+
+
+
   const fetchClientes = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -1245,84 +1512,88 @@ export default function Pedidos() {
     setIndexEditando(null);
   }, [resetDetalleForm]);
 
-  const handleAñadirProducto = useCallback(() => {
-    const { productos_id, cantidad } = detalleForm;
+  // Función mejorada para añadir producto (en modo edición)
+const handleAñadirProductoTemporal = useCallback(() => {
+  const { productos_id, cantidad } = detalleForm;
 
-    if (!productos_id || !cantidad || Number(cantidad) <= 0) {
-      Alert.alert('Error', 'Debe seleccionar un producto y especificar una cantidad válida.');
-      return;
-    }
+  if (!productos_id || !cantidad || Number(cantidad) <= 0) {
+    Alert.alert('Error', 'Debe seleccionar un producto y especificar una cantidad válida.');
+    return;
+  }
 
-    const precios = calculateSubtotal(cantidad, productos_id);
-    const producto = productos.find((p) => p.id === Number(productos_id));
+  const precios = calculateSubtotal(cantidad, productos_id);
+  const producto = productos.find((p) => p.id === Number(productos_id));
 
-    if (!producto) {
-      Alert.alert('Error', 'Producto no encontrado.');
-      return;
-    }
+  if (!producto) {
+    Alert.alert('Error', 'Producto no encontrado.');
+    return;
+  }
 
-    if (indexEditando !== null) {
+  if (indexEditando !== null) {
+
+
       // Editar producto existente
-      const productoExistente = productosSeleccionados.find(
-        (p, idx) => Number(p.productos_id) === Number(productos_id) && idx !== indexEditando
-      );
+     const productoExistente = productosTemporales.find(
+      (p, idx) => Number(p.productos_id) === Number(productos_id) && idx !== indexEditando
+    );
 
-      if (productoExistente) {
-        Alert.alert('Error', 'Este producto ya está en la lista.');
-        return;
-      }
-
-      const productoEditado = {
-        productos_id: Number(productos_id),
-        cantidad: Number(cantidad),
-        precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
-        precio_unitario_con_iva: precios.precio_unitario_con_iva,
-        subtotal: precios.subtotal,
-        nombre: producto.nombre,
-      };
-
-      setProductosSeleccionados((prev) => {
-        const nuevaLista = [...prev];
-        nuevaLista[indexEditando] = productoEditado;
-        return nuevaLista;
-      });
-
-      setProductoEditando(null);
-      setIndexEditando(null);
-    } else {
-      // Agregar nuevo producto
-      const productoExistente = productosSeleccionados.find(
-        (p) => Number(p.productos_id) === Number(productos_id)
-      );
-
-      if (productoExistente) {
-        Alert.alert('Error', 'Este producto ya está en la lista.');
-        return;
-      }
-
-      const nuevoProducto = {
-        productos_id: Number(productos_id),
-        cantidad: Number(cantidad),
-        precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
-        precio_unitario_con_iva: precios.precio_unitario_con_iva,
-        subtotal: precios.subtotal,
-        nombre: producto.nombre,
-      };
-
-      setProductosSeleccionados((prev) => [...prev, nuevoProducto]);
+    if (productoExistente) {
+      Alert.alert('Error', 'Este producto ya está en la lista.');
+      return;
     }
 
-    resetDetalleForm();
-    setMostrarFormularioProducto(false);
-  }, [detalleForm, calculateSubtotal, productos, productosSeleccionados, indexEditando, resetDetalleForm]);
+    const productoEditado = {
+      productos_id: Number(productos_id),
+      cantidad: Number(cantidad),
+      precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
+      precio_unitario_con_iva: precios.precio_unitario_con_iva,
+      subtotal: precios.subtotal,
+      nombre: producto.nombre,
+    };
 
-  const handleEliminarProducto = useCallback((index) => {
-    setProductosSeleccionados((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+    setProductosTemporales((prev) => {
+      const nuevaLista = [...prev];
+      nuevaLista[indexEditando] = productoEditado;
+      return nuevaLista;
+    });
 
- // IMPORTANTE: Asegúrate de que esta función esté DENTRO del componente Pedidos
-// y DESPUÉS de la declaración de todos los estados con useState
+    setProductoEditando(null);
+    setIndexEditando(null);
+  } else {
 
+
+   const productoExistente = productosTemporales.find(
+      (p) => Number(p.productos_id) === Number(productos_id)
+    );
+
+    if (productoExistente) {
+      Alert.alert('Error', 'Este producto ya está en la lista.');
+      return;
+    }
+
+    const nuevoProducto = {
+      productos_id: Number(productos_id),
+      cantidad: Number(cantidad),
+      precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
+      precio_unitario_con_iva: precios.precio_unitario_con_iva,
+      subtotal: precios.subtotal,
+      nombre: producto.nombre,
+    };
+
+    setProductosTemporales((prev) => [...prev, nuevoProducto]);
+  }
+
+  setCambiosPendientes(true);
+  resetDetalleForm();
+  setMostrarFormularioProducto(false);
+}, [detalleForm, calculateSubtotal, productos, productosTemporales, indexEditando, resetDetalleForm]);
+
+
+ // Función para eliminar producto temporal
+const handleEliminarProductoTemporal = useCallback((index) => {
+  setProductosTemporales((prev) => prev.filter((_, i) => i !== index));
+  setCambiosPendientes(true);
+}, []);
 const handleGuardar = useCallback(async () => {
   const { cliente_id, fecha, vendedor_id, id, abono, descuento, numero_factura } = form;
 
@@ -1481,6 +1752,179 @@ const handleGuardar = useCallback(async () => {
     setCargando(false);
   }
 }, [form, productosSeleccionados, aplicarIva, clientes, resetForm, fetchPedidos, pedidoDetalleOriginal, pedidos]);
+const handleEliminarProducto = useCallback((index) => {
+  setProductosSeleccionados((prev) => prev.filter((_, i) => i !== index));
+}, []);
+
+const handleAñadirProducto = useCallback(() => {
+  const { productos_id, cantidad } = detalleForm;
+
+  if (!productos_id || !cantidad || Number(cantidad) <= 0) {
+    Alert.alert('Error', 'Debe seleccionar un producto y especificar una cantidad válida.');
+    return;
+  }
+
+  const precios = calculateSubtotal(cantidad, productos_id);
+  const producto = productos.find((p) => p.id === Number(productos_id));
+
+  if (!producto) {
+    Alert.alert('Error', 'Producto no encontrado.');
+    return;
+  }
+
+  if (indexEditando !== null) {
+    // Editar producto existente
+    const productoExistente = productosSeleccionados.find(
+      (p, idx) => Number(p.productos_id) === Number(productos_id) && idx !== indexEditando
+    );
+
+    if (productoExistente) {
+      Alert.alert('Error', 'Este producto ya está en la lista.');
+      return;
+    }
+
+    const productoEditado = {
+      productos_id: Number(productos_id),
+      cantidad: Number(cantidad),
+      precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
+      precio_unitario_con_iva: precios.precio_unitario_con_iva,
+      subtotal: precios.subtotal,
+      nombre: producto.nombre,
+    };
+
+
+
+    setProductosSeleccionados((prev) => {
+      const nuevaLista = [...prev];
+      nuevaLista[indexEditando] = productoEditado;
+      return nuevaLista;
+    });
+
+    setProductoEditando(null);
+    setIndexEditando(null);
+  } else {
+    // Agregar nuevo producto
+    const productoExistente = productosSeleccionados.find(
+      (p) => Number(p.productos_id) === Number(productos_id)
+    );
+
+    if (productoExistente) {
+      Alert.alert('Error', 'Este producto ya está en la lista.');
+      return;
+    }
+
+    const nuevoProducto = {
+      productos_id: Number(productos_id),
+      cantidad: Number(cantidad),
+      precio_unitario_sin_iva: precios.precio_unitario_sin_iva,
+      precio_unitario_con_iva: precios.precio_unitario_con_iva,
+      subtotal: precios.subtotal,
+      nombre: producto.nombre,
+    };
+
+    setProductosSeleccionados((prev) => [...prev, nuevoProducto]);
+  }
+
+  resetDetalleForm();
+  setMostrarFormularioProducto(false);
+}, [detalleForm, calculateSubtotal, productos, productosSeleccionados, indexEditando, resetDetalleForm]);
+
+
+
+
+const guardarCambiosPedido = useCallback(async () => {
+  if (!mostrarDetalles || productosTemporales.length === 0) {
+    Alert.alert('Error', 'Debe tener al menos un producto en el pedido.');
+    return;
+  }
+
+  try {
+    setCargando(true);
+
+    const notaVentaId = mostrarDetalles.notas_venta_id;
+
+    // Calcular nuevos totales
+    let subtotalTotal = productosTemporales.reduce((acc, p) => {
+      const subtotalLimpio = p.subtotal.toString().replace(/[^0-9.-]+/g, '');
+      return acc + Number(subtotalLimpio);
+    }, 0);
+
+    const ivaTotal = subtotalTotal * 0.16;
+    const totalFinal = subtotalTotal + ivaTotal - (mostrarDetalles.notas_venta?.descuento || 0);
+
+    // Actualizar nota de venta
+    const { error: notaUpdateError } = await supabase
+      .from('notas_venta')
+      .update({
+        subtotal: subtotalTotal,
+        iva: ivaTotal,
+        total: totalFinal,
+      })
+      .eq('id', notaVentaId);
+
+    if (notaUpdateError) throw notaUpdateError;
+
+    // Eliminar pedidos anteriores
+    await supabase
+      .from('pedidos')
+      .delete()
+      .eq('notas_venta_id', notaVentaId);
+
+    // Crear nuevos pedidos
+    const pedidosData = productosTemporales.map(p => ({
+      notas_venta_id: notaVentaId,
+      productos_id: Number(p.productos_id),
+      cantidad: Number(p.cantidad),
+      precio_kilo_venta: Number(p.precio_unitario_sin_iva.replace(/[^0-9.-]+/g, '')),
+      precio_unitario_venta: Number(p.precio_unitario_sin_iva.replace(/[^0-9.-]+/g, '')),
+      precio_iva: Number(p.precio_unitario_con_iva.replace(/[^0-9.-]+/g, '')),
+      importe: Number(p.subtotal.replace(/[^0-9.-]+/g, '')),
+    }));
+
+    const { error: pedidosError } = await supabase
+      .from('pedidos')
+      .insert(pedidosData);
+
+    if (pedidosError) throw pedidosError;
+
+    Alert.alert('Éxito', 'Pedido actualizado correctamente');
+    
+    // Actualizar estados
+    setProductosSeleccionados([...productosTemporales]);
+    setModoEdicion(false);
+    setProductosTemporales([]);
+    setCambiosPendientes(false);
+    
+    // Recargar datos
+    await fetchPedidos();
+    await fetchPedidosDetalle(notaVentaId);
+
+  } catch (error) {
+    console.error('Error al guardar cambios:', error);
+    Alert.alert('Error', 'Error al guardar los cambios: ' + (error.message || 'Error desconocido'));
+  } finally {
+    setCargando(false);
+  }
+}, [mostrarDetalles, productosTemporales, fetchPedidos, fetchPedidosDetalle]);
+
+
+
+
+const handleEditarProductoTemporal = useCallback((producto, index) => {
+  setProductoEditando(producto);
+  setIndexEditando(index);
+  setDetalleForm({
+    productos_id: producto.productos_id.toString(),
+    cantidad: producto.cantidad.toString(),
+    precio_unitario_sin_iva: '',
+    precio_unitario_con_iva: '',
+    kg_por_millar: '',
+    importe_total: '',
+  });
+  setMostrarFormularioProducto(true);
+}, []);
+        
+
 
 // Debe estar DENTRO del componente, después de todos los useState
 const handleEliminar = useCallback(async (id) => {
@@ -1707,18 +2151,43 @@ const handleEliminar = useCallback(async (id) => {
   }, []);
 
   const handleVolver = useCallback(() => {
+    console.log('Volviendo...', { 
+      mostrarFormulario, 
+      mostrarDetalles: !!mostrarDetalles,
+      pedidoDetalleOriginal: !!pedidoDetalleOriginal 
+    });
+
+
+
+
+
+
     // Si estamos volviendo desde el formulario y teníamos un pedido original
-    if (mostrarFormulario && pedidoDetalleOriginal) {
-      setMostrarDetalles(pedidoDetalleOriginal);
+     if (mostrarFormulario && pedidoDetalleOriginal) {
+    console.log('Volviendo a detalles desde formulario');
+    setMostrarDetalles(pedidoDetalleOriginal);
+    setPedidoDetalleOriginal(null);
+    resetForm();
+  } else if (mostrarFormulario) {
+    // Volver desde formulario a lista principal
+    console.log('Volviendo a lista principal desde formulario');
+      setMostrarFormulario(false);
+      setMostrarDetalles(null);
       setPedidoDetalleOriginal(null);
       resetForm();
-    } else {
+      resetDetalleForm();
+  } else {
+    
       // Comportamiento normal
+      console.log('Volviendo a lista principal desde detalles');
       setMostrarDetalles(null);
       setMostrarFormularioProducto(false);
       setProductosSeleccionados([]);
       setProductoEditando(null);
       setIndexEditando(null);
+      setModoEdicion(false);
+      setProductosTemporales([]);
+      setCambiosPendientes(false);
       resetDetalleForm();
     }
   }, [mostrarFormulario, pedidoDetalleOriginal, resetForm, resetDetalleForm]);
@@ -2031,6 +2500,8 @@ const handleEliminar = useCallback(async (id) => {
     }
   }, [form.cliente_id, clientes]);
 
+
+
   // Theme para inputs
   const inputTheme = {
     colors: {
@@ -2068,6 +2539,15 @@ const handleEliminar = useCallback(async (id) => {
         handleCancelarEdicion={handleCancelarEdicion}
         productoEditando={productoEditando}
         indexEditando={indexEditando}
+          modoEdicion={modoEdicion}
+  productosTemporales={productosTemporales}
+  cambiosPendientes={cambiosPendientes}
+  iniciarModoEdicion={iniciarModoEdicion}
+  cancelarEdicion={cancelarEdicion}
+  guardarCambiosPedido={guardarCambiosPedido}
+  handleAñadirProductoTemporal={handleAñadirProductoTemporal}
+  handleEliminarProductoTemporal={handleEliminarProductoTemporal}
+  handleEditarProductoTemporal={handleEditarProductoTemporal}
       />
     );
   }
@@ -2326,7 +2806,7 @@ const handleEliminar = useCallback(async (id) => {
             )}
 
             {/* Lista de productos seleccionados */}
-            {productosSeleccionados.length > 0 ? (
+            {(modoEdicion ? productosTemporales : productosSeleccionados).length > 0 ? (
               <View style={styles.tablaProductos}>
                 <View style={styles.tablaHeader}>
                   <Text style={[styles.tablaHeaderText, { flex: 3 }]}>Producto</Text>
@@ -2336,7 +2816,7 @@ const handleEliminar = useCallback(async (id) => {
                   <Text style={[styles.tablaHeaderText, { flex: 1 }]}>Acc.</Text>
                 </View>
 
-                {productosSeleccionados.map((producto, index) => {
+                {(modoEdicion ? productosTemporales : productosSeleccionados).map((producto, index) => {
                   const prod = productos.find(p => p.id === producto.productos_id);
                   const precioFormateado = Number(producto.precio_unitario_con_iva?.replace(/[^0-9.-]+/g, '') || 0);
                   const subtotalFormateado = Number(producto.subtotal?.replace(/[^0-9.-]+/g, '') || 0);
@@ -2872,6 +3352,7 @@ const styles = StyleSheet.create({
   },
   btnAbonar: {
     backgroundColor: '#22c55e',
+    
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
@@ -3543,4 +4024,53 @@ const styles = StyleSheet.create({
     color: '#3b82f6',
     fontSize: 16,
   },
+
+  botonesProductosHeader: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  btnGuardar: {
+    backgroundColor: '#22c55e',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  cambiosPendientesAlert: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f59e0b',
+  },
+  cambiosPendientesText: {
+    color: '#92400e',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  btnRecalcular: {
+  backgroundColor: '#6366f1',
+  paddingVertical: 8,
+  paddingHorizontal: 16,
+  borderRadius: 8,
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginTop: 12,
+  alignSelf: 'center',
+},
+btnRecalcularTexto: {
+  color: '#ffffff',
+  fontSize: 12,
+  fontWeight: '600',
+},
+
 });
