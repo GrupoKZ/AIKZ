@@ -16,10 +16,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SelectList } from 'react-native-dropdown-select-list';
 import { TextInput as PaperInput } from 'react-native-paper';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
+
 // Funciones de cálculo mejoradas
 const calcularPrecioUnitario = (producto, precioKilo) => {
   if (!producto || !precioKilo) return 0;
@@ -178,42 +178,64 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
     }
   }, [pedido?.notas_venta_id, fetchPedidosDetalle]);
 
-  // Efecto para autocompletar datos y calcular importes
-  useEffect(() => {
-    if (detalleForm.productos_id) {
-      const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
-      if (producto) {
-        const cantidad = Number(detalleForm.cantidad) || 0;
+  // Efecto para mostrar detalles del producto cuando se selecciona uno
+  // Agregar estado para controlar si el usuario está editando manualmente
+const [editandoManual, setEditandoManual] = useState(false);
 
-        // Rellenar campos de dimensiones si no están ya rellenos
-        if (!detalleForm.ancho_cm) handleDetalleChange('ancho_cm', producto.ancho_cm?.toString() || '');
-        if (!detalleForm.largo_cm) handleDetalleChange('largo_cm', producto.largo_cm?.toString() || '');
-        if (!detalleForm.micraje_um) handleDetalleChange('micraje_um', producto.micraje_um?.toString() || '');
-
+// Efecto para autocompletar datos y calcular importes
+// Efecto para autocompletar datos y calcular importes
+useEffect(() => {
+  if (detalleForm.productos_id) {
+    const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
+    if (producto) {
+      // Rellenar campos automáticamente
+      if (!detalleForm.ancho_cm && producto.ancho_cm) {
+        handleDetalleChange('ancho_cm', producto.ancho_cm.toString());
+      }
+      if (!detalleForm.largo_cm && producto.largo_cm) {
+        handleDetalleChange('largo_cm', producto.largo_cm.toString());
+      }
+      if (!detalleForm.micraje_um && producto.micraje_um) {
+        handleDetalleChange('micraje_um', producto.micraje_um.toString());
+      }
+      
+      // SIEMPRE establecer precio/kilo en 110
+      handleDetalleChange('precio_unitario_sin_iva', '110.00');
+      
+      // Si hay cantidad, calcular todo automáticamente
+      const cantidad = Number(detalleForm.cantidad) || 0;
+      if (cantidad > 0) {
         const productoConValoresActuales = {
           ...producto,
-          ancho_cm: Number(detalleForm.ancho_cm) || Number(producto.ancho_cm) || 0,
-          largo_cm: Number(detalleForm.largo_cm) || Number(producto.largo_cm) || 0,
-          micraje_um: Number(detalleForm.micraje_um) || Number(producto.micraje_um) || 0,
+          ancho_cm: Number(detalleForm.ancho_cm || producto.ancho_cm) || 0,
+          largo_cm: Number(detalleForm.largo_cm || producto.largo_cm) || 0,
+          micraje_um: Number(detalleForm.micraje_um || producto.micraje_um) || 0,
         };
 
         const precioPorKilo = 110;
-        const precioUnitario = producto.material === 'CELOFAN'
-          ? calcularPrecioUnitario(productoConValoresActuales, precioPorKilo)
-          : precioPorKilo;
+        let precioUnitario = precioPorKilo;
+        
+        if (producto.material?.toUpperCase() === 'CELOFAN') {
+          precioUnitario = calcularPrecioUnitario(productoConValoresActuales, precioPorKilo);
+        }
 
         const precioConIva = precioUnitario * 1.16;
-        const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
+        const importeTotal = precioConIva * cantidad;
         const kgPorMillar = calcularKgPorMillar(productoConValoresActuales);
 
-        // Actualizar todos los campos relevantes
-        handleDetalleChange('precio_unitario_sin_iva', '110.00');
+        // Actualizar todos los campos calculados
         handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
         handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
         handleDetalleChange('importe_total', importeTotal.toFixed(2));
+      } else {
+        // Si no hay cantidad, limpiar los campos calculados
+        handleDetalleChange('precio_unitario_con_iva', '0.00');
+        handleDetalleChange('kg_por_millar', '0.00');
+        handleDetalleChange('importe_total', '0.00');
       }
     }
-  }, [detalleForm.productos_id, detalleForm.cantidad, detalleForm.ancho_cm, detalleForm.largo_cm, detalleForm.micraje_um, productos, handleDetalleChange]);
+  }
+}, [detalleForm.productos_id, detalleForm.cantidad, detalleForm.ancho_cm, detalleForm.largo_cm, detalleForm.micraje_um, productos, handleDetalleChange]);
   const exportarPDF = async () => {
     if (!pedido) return;
     
@@ -232,17 +254,17 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
 
       const productosHTML = productosSeleccionados
         .map((producto) => {
-          const prodInfo = productos.find(p => p.id === producto.productos_id);
-          const medidas = prodInfo ? `${prodInfo.ancho_cm}x${prodInfo.largo_cm}cm ${prodInfo.micraje_um}μm` : 'N/A';
+          const prod = productos.find(p => p.id === producto.productos_id);
+          const medidas = prod ? `${prod.ancho_cm}x${prod.largo_cm}cm ${prod.micraje_um}μm` : 'N/A';
           const precioFormateado = Number(producto.precio_unitario_con_iva?.replace(/[^0-9.-]+/g, '') || 0);
           const subtotalFormateado = Number(producto.subtotal?.replace(/[^0-9.-]+/g, '') || 0);
           
           return `
             <tr>
               <td>${producto.nombre || 'N/A'}</td>
-              <td>${producto.material || 'N/A'}</td>
+              <td>${prod?.material || 'N/A'}</td>
               <td>${medidas}</td>
-              <td>${producto.cantidad || 0} ${producto.material?.toUpperCase() === 'POLIETILENO' ? 'kg' : 'millares'}</td>
+              <td>${producto.cantidad || 0} ${prod?.material === 'POLIETILENO' ? 'kg' : 'millares'}</td>
               <td>$${precioFormateado.toLocaleString('es-MX', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
@@ -593,11 +615,19 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
                   <Text style={styles.label}>Producto</Text>
                   <View style={styles.pickerContainer}>
                     <Picker
-                      selectedValue={detalleForm.productos_id}
-                      onValueChange={(value) => handleDetalleChange('productos_id', value)}
-                      style={styles.picker}
-                      enabled={!cargando}
-                    >
+  selectedValue={detalleForm.productos_id}
+  onValueChange={(value) => {
+    handleDetalleChange('productos_id', value);
+    // Establecer precio/kilo inmediatamente
+    if (value) {
+      setTimeout(() => {
+        handleDetalleChange('precio_unitario_sin_iva', '110.00');
+      }, 0);
+    }
+  }}
+  style={styles.picker}
+  enabled={!cargando}
+>
                       <Picker.Item label="Seleccionar producto" value="" />
                       {productos.map((p) => (
                         <Picker.Item 
@@ -610,45 +640,17 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
                   </View>
                 </View>
                 <View style={styles.col2}>
-
-                <PaperInput
-  label="Cantidad"
-  value={detalleForm.cantidad}
-  onChangeText={(text) => {
-    handleDetalleChange('cantidad', text);
-    
-    // Calcular inmediatamente si hay producto seleccionado
-    if (detalleForm.productos_id && text) {
-      const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
-      if (producto) {
-        const cantidad = Number(text) || 0;
-        const precioPorKilo = 110;
-        
-        const precioUnitario = producto.material === 'CELOFAN' 
-          ? calcularPrecioUnitario(producto, precioPorKilo)
-          : precioPorKilo;
-
-        const precioConIva = precioUnitario * 1.16;
-        const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
-        const kgPorMillar = calcularKgPorMillar(producto);
-
-        // Actualizar todos los campos
-        setTimeout(() => {
-          handleDetalleChange('precio_unitario_sin_iva', '110.00');
-          handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
-          handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
-          handleDetalleChange('importe_total', importeTotal.toFixed(2));
-        }, 0);
-      }
-    }
-  }}
-  mode="outlined"
-  style={styles.input}
-  keyboardType="numeric"
-  theme={inputTheme}
-  textColor="#ffffff"
-  disabled={cargando}
-/>
+                  <PaperInput
+                    label="Cantidad"
+                    value={detalleForm.cantidad}
+                    onChangeText={(text) => handleDetalleChange('cantidad', text)}
+                    mode="outlined"
+                    style={styles.input}
+                    keyboardType="numeric"
+                    theme={inputTheme}
+                    textColor="#ffffff"
+                    disabled={cargando}
+                  />
                 </View>
               </View>
 {/* Información adicional del producto */}
@@ -676,7 +678,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
   label="Largo (cm)"
   value={detalleForm.largo_cm || productoSeleccionado.largo_cm?.toString() || ''}
   onChangeText={(text) => {
-  
+    setEditandoManual(true); // Marcar como edición manual
     handleDetalleChange('largo_cm', text);
   }}
   mode="outlined"
@@ -695,7 +697,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
   label="Micraje (μm)"
   value={detalleForm.micraje_um || productoSeleccionado.micraje_um?.toString() || ''}
   onChangeText={(text) => {
-    
+    setEditandoManual(true); // Marcar como edición manual
     handleDetalleChange('micraje_um', text);
   }}
           mode="outlined"
@@ -710,17 +712,13 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
       <View style={styles.col2}>
         <PaperInput
   label="Precio/Kilo"
-  value={detalleForm.precio_unitario_sin_iva || '0.00'}
-  onChangeText={(text) => {
-   
-    handleDetalleChange('precio_unitario_sin_iva', text);
-  }}
-          mode="outlined"
+  value="110.00"
+  mode="outlined"
   style={styles.input}
-  keyboardType="numeric"
   theme={inputTheme}
   textColor="#ffffff"
-  disabled={cargando}
+  disabled={true}
+  editable={false}
 />
       </View>
     </View>
@@ -731,7 +729,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
   label="Precio con IVA"
   value={detalleForm.precio_unitario_con_iva || '0.00'}
   onChangeText={(text) => {
-    
+    setEditandoManual(true); // Marcar como edición manual
     handleDetalleChange('precio_unitario_con_iva', text);
   }}
           mode="outlined"
@@ -762,7 +760,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
   label="Importe Total"
   value={detalleForm.importe_total || '0.00'}
   onChangeText={(text) => {
-   
+    setEditandoManual(true); // Marcar como edición manual
     handleDetalleChange('importe_total', text);
   }}
   mode="outlined"
@@ -776,7 +774,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
   disabled={cargando}
 />
 
-  
+    
   </View>
 )}
 
@@ -818,6 +816,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
               </View>
 
               {productosSeleccionados.map((producto, index) => {
+                const prod = productos.find(p => p.id === producto.productos_id);
                 const tieneEntrega = producto.entregas && producto.entregas.length > 0;
                 const precioFormateado = Number(producto.precio_unitario_con_iva?.replace(/[^0-9.-]+/g, '') || 0);
                 const subtotalFormateado = Number(producto.subtotal?.replace(/[^0-9.-]+/g, '') || 0);
@@ -828,9 +827,9 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
                       <Text style={styles.tablaCeldaTexto} numberOfLines={2}>
                         {producto.nombre || 'N/A'}
                       </Text>
-                      {producto.material && (
+                      {prod && (
                         <Text style={styles.materialSubtext}>
-                          {producto.material}
+                          {prod.material}
                         </Text>
                       )}
                     </View>
@@ -840,7 +839,7 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
                         {producto.cantidad || 0}
                       </Text>
                       <Text style={styles.unidadSubtext}>
-                        {producto.material?.toUpperCase() === 'POLIETILENO' ? 'kg' : 'millares'}
+                        {prod?.material === 'POLIETILENO' ? 'kg' : 'mill'}
                       </Text>
                     </View>
                     
@@ -1098,7 +1097,7 @@ export default function Pedidos() {
   const [productosTemporales, setProductosTemporales] = useState([]);
 const [modoEdicion, setModoEdicion] = useState(false);
 const [cambiosPendientes, setCambiosPendientes] = useState(false);
-
+const [editandoManual, setEditandoManual] = useState(false);
 
 
   // Estados del formulario
@@ -1143,7 +1142,7 @@ const [cambiosPendientes, setCambiosPendientes] = useState(false);
     largo_cm: '',
     micraje_um: '',
   });
-  
+  setEditandoManual(false); // Resetear modo manual
 }, []);
 
 const resetForm = useCallback(() => {
@@ -1269,7 +1268,6 @@ const resetForm = useCallback(() => {
           maximumFractionDigits: 2,
         })),
         nombre: pedido.productos.nombre,
-        material: pedido.productos.material, // <-- CORRECCIÓN CLAVE
         entregas: pedido.entregas || [],
       }));
 
@@ -1454,9 +1452,8 @@ const cancelarEdicion = useCallback(() => {
   }, [clientes]);
 
   const handleDetalleChange = useCallback((campo, valor) => {
-  console.log('Cambiando:', campo, valor); // Agrega este console.log para depurar
-  setDetalleForm((prev) => ({ ...prev, [campo]: valor }));
-}, []);
+    setDetalleForm((prev) => ({ ...prev, [campo]: valor }));
+  }, []);
 
   const handleDateChange = useCallback((event, selectedDate) => {
     setShowDatePicker(false);
@@ -1524,7 +1521,6 @@ const handleAñadirProductoTemporal = useCallback(() => {
       precio_unitario_con_iva: precios.precio_unitario_con_iva,
       subtotal: precios.subtotal,
       nombre: producto.nombre,
-      material: producto.material,
     };
 
     setProductosTemporales((prev) => {
@@ -1554,7 +1550,6 @@ const handleAñadirProductoTemporal = useCallback(() => {
       precio_unitario_con_iva: precios.precio_unitario_con_iva,
       subtotal: precios.subtotal,
       nombre: producto.nombre,
-      material: producto.material, // <-- CORRECCIÓN: Añadir material
     };
 
     setProductosTemporales((prev) => [...prev, nuevoProducto]);
@@ -1767,7 +1762,6 @@ const handleAñadirProducto = useCallback(() => {
       precio_unitario_con_iva: precios.precio_unitario_con_iva,
       subtotal: precios.subtotal,
       nombre: producto.nombre,
-      material: producto.material,
     };
 
 
@@ -1798,7 +1792,6 @@ const handleAñadirProducto = useCallback(() => {
       precio_unitario_con_iva: precios.precio_unitario_con_iva,
       subtotal: precios.subtotal,
       nombre: producto.nombre,
-      material: producto.material, // <-- CORRECCIÓN: Añadir material
     };
 
     setProductosSeleccionados((prev) => [...prev, nuevoProducto]);
@@ -2567,7 +2560,7 @@ const handleEliminar = useCallback(async (id) => {
               <View style={styles.col2}>
                 <PaperInput
                   label="Folio"
-                  value={form.id?.toString() || 'Folio'}
+                  value={form.id?.toString() || 'Nuevo'}
                   mode="outlined"
                   style={styles.input}
                   theme={inputTheme}
@@ -2601,35 +2594,25 @@ const handleEliminar = useCallback(async (id) => {
 
             <View style={styles.row2}>
               <View style={styles.col2}>
-  <Text style={styles.label}>Cliente *</Text>
-  <SelectList 
-    setSelected={(val) => handleChange('cliente_id', val)} 
-    data={clientes.map(c => ({
-      key: c.id.toString(),
-      value: `${c.nombre_contacto || 'Sin nombre'} (${c.empresa || 'N/A'})`
-    }))}
-    save="key"
-    placeholder="Seleccionar cliente"
-    searchPlaceholder="Buscar cliente..."
-    boxStyles={{
-      backgroundColor: '#1e293b',
-      borderColor: '#3b82f6',
-      borderRadius: 8,
-    }}
-    inputStyles={{
-      color: '#ffffff',
-    }}
-    dropdownStyles={{
-      backgroundColor: '#1e293b',
-      borderColor: '#3b82f6',
-    }}
-    dropdownTextStyles={{
-      color: '#ffffff',
-    }}
-    maxHeight={200}
-    notFoundText="No se encontraron clientes"
-  />
-</View>
+                <Text style={styles.label}>Cliente *</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={form.cliente_id}
+                    onValueChange={(value) => handleChange('cliente_id', value)}
+                    style={styles.picker}
+                    enabled={!cargando}
+                  >
+                    <Picker.Item label="Seleccionar cliente" value="" />
+                    {clientes.map((c) => (
+                      <Picker.Item
+                        key={c.id}
+                        label={`${c.nombre_contacto} (${c.empresa || 'N/A'})`}
+                        value={c.id.toString()}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
               
               <View style={styles.col2}>
                 <Text style={styles.label}>Vendedor *</Text>
@@ -2696,16 +2679,52 @@ const handleEliminar = useCallback(async (id) => {
                   </View>
                   <View style={styles.col2}>
                     <PaperInput
-                      label="Cantidad"
-                      value={detalleForm.cantidad}
-                      onChangeText={(text) => handleDetalleChange('cantidad', text)}
-                      mode="outlined"
-                      style={styles.input}
-                      keyboardType="numeric"
-                      theme={inputTheme}
-                      textColor="#ffffff"
-                      disabled={cargando}
-                    />
+  label="Cantidad"
+  value={detalleForm.cantidad}
+  onChangeText={(text) => {
+    handleDetalleChange('cantidad', text);
+    
+    // Calcular inmediatamente si hay producto seleccionado
+    if (detalleForm.productos_id && text) {
+      const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
+      if (producto) {
+        const cantidad = Number(text) || 0;
+        const precioPorKilo = 110;
+        
+        const productoConValoresActuales = {
+          ...producto,
+          ancho_cm: Number(detalleForm.ancho_cm || producto.ancho_cm) || 0,
+          largo_cm: Number(detalleForm.largo_cm || producto.largo_cm) || 0,
+          micraje_um: Number(detalleForm.micraje_um || producto.micraje_um) || 0,
+        };
+        
+        let precioUnitario = precioPorKilo;
+        
+        if (producto.material?.toUpperCase() === 'CELOFAN') {
+          precioUnitario = calcularPrecioUnitario(productoConValoresActuales, precioPorKilo);
+        }
+
+        const precioConIva = precioUnitario * 1.16;
+        const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
+        const kgPorMillar = calcularKgPorMillar(productoConValoresActuales);
+
+        // Actualizar todos los campos inmediatamente
+        setTimeout(() => {
+          handleDetalleChange('precio_unitario_sin_iva', '110.00');
+          handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
+          handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
+          handleDetalleChange('importe_total', importeTotal.toFixed(2));
+        }, 0);
+      }
+    }
+  }}
+  mode="outlined"
+  style={styles.input}
+  keyboardType="numeric"
+  theme={inputTheme}
+  textColor="#ffffff"
+  disabled={cargando}
+/>
                   </View>
                 </View>
 
@@ -2720,8 +2739,7 @@ const handleEliminar = useCallback(async (id) => {
           label="Ancho (cm)"
           value={detalleForm.ancho_cm || productoSeleccionadoForm.ancho_cm?.toString() || ''}
           onChangeText={(text) => {
-          
-
+            setEditandoManual(true);
             handleDetalleChange('ancho_cm', text);
           }}
           mode="outlined"
@@ -2738,7 +2756,7 @@ const handleEliminar = useCallback(async (id) => {
           label="Largo (cm)"
           value={detalleForm.largo_cm || productoSeleccionadoForm.largo_cm?.toString() || ''}
           onChangeText={(text) => {
-            
+            setEditandoManual(true);
             handleDetalleChange('largo_cm', text);
           }}
           mode="outlined"
@@ -2757,7 +2775,7 @@ const handleEliminar = useCallback(async (id) => {
           label="Micraje (μm)"
           value={detalleForm.micraje_um || productoSeleccionadoForm.micraje_um?.toString() || ''}
           onChangeText={(text) => {
-            
+            setEditandoManual(true);
             handleDetalleChange('micraje_um', text);
           }}
           mode="outlined"
@@ -2770,15 +2788,15 @@ const handleEliminar = useCallback(async (id) => {
       </View>
 
       <View style={styles.col2}>
-       <PaperInput
+        <PaperInput
   label="Precio/Kilo"
-  value="110"
+  value="110.00"
   mode="outlined"
   style={styles.input}
   theme={inputTheme}
   textColor="#ffffff"
-  disabled={true}  // Siempre deshabilitado
-  editable={false} // No editable
+  disabled={true}
+  editable={false}
 />
       </View>
     </View>
@@ -2789,7 +2807,7 @@ const handleEliminar = useCallback(async (id) => {
           label="Precio con IVA"
           value={detalleForm.precio_unitario_con_iva || '0.00'}
           onChangeText={(text) => {
-            
+            setEditandoManual(true);
             handleDetalleChange('precio_unitario_con_iva', text);
           }}
           mode="outlined"
@@ -2820,7 +2838,7 @@ const handleEliminar = useCallback(async (id) => {
       label="Importe Total"
       value={detalleForm.importe_total || '0.00'}
       onChangeText={(text) => {
-       
+        setEditandoManual(true);
         handleDetalleChange('importe_total', text);
       }}
       mode="outlined"
@@ -2834,7 +2852,6 @@ const handleEliminar = useCallback(async (id) => {
       disabled={cargando}
     />
 
- 
   </View>
 )}
 
@@ -2942,7 +2959,7 @@ const handleEliminar = useCallback(async (id) => {
           <View style={styles.section}>
             <Text style={styles.subTitle}>Configuración Adicional</Text>
             
-           <View style={styles.row2}>
+            <View style={styles.row2}>
   <View style={styles.col2}>
     <PaperInput
       label="Número de Factura (opcional)"
@@ -3179,7 +3196,7 @@ const handleEliminar = useCallback(async (id) => {
                     </View>
 
                     {/* Información de precios mejorada */}
-                 
+                   
                   </View>
 
                   {/* Indicadores de estado */}
@@ -4079,20 +4096,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
   },
-  btnRecalcular: {
-  backgroundColor: '#6366f1',
-  paddingVertical: 8,
-  paddingHorizontal: 16,
-  borderRadius: 8,
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 6,
-  marginTop: 12,
-  alignSelf: 'center',
-},
-btnRecalcularTexto: {
-  color: '#ffffff',
-  fontSize: 12,
-  fontWeight: '600',
-},
+
+
 });
