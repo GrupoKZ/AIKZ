@@ -178,53 +178,42 @@ const total = subtotalTotal + iva - (pedido?.notas_venta?.descuento || 0);
     }
   }, [pedido?.notas_venta_id, fetchPedidosDetalle]);
 
-  // Efecto para mostrar detalles del producto cuando se selecciona uno
-  // Agregar estado para controlar si el usuario está editando manualmente
+  // Efecto para autocompletar datos y calcular importes
+  useEffect(() => {
+    if (detalleForm.productos_id) {
+      const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
+      if (producto) {
+        const cantidad = Number(detalleForm.cantidad) || 0;
 
+        // Rellenar campos de dimensiones si no están ya rellenos
+        if (!detalleForm.ancho_cm) handleDetalleChange('ancho_cm', producto.ancho_cm?.toString() || '');
+        if (!detalleForm.largo_cm) handleDetalleChange('largo_cm', producto.largo_cm?.toString() || '');
+        if (!detalleForm.micraje_um) handleDetalleChange('micraje_um', producto.micraje_um?.toString() || '');
 
-useEffect(() => {
-  if (detalleForm.productos_id && detalleForm.cantidad) {
-    const producto = productos.find(p => p.id === Number(detalleForm.productos_id));
-    if (producto) {
-      const cantidad = Number(detalleForm.cantidad) || 0;
-      
-      // Usar valores del formulario si existen, sino usar los del producto
-      const anchoActual = detalleForm.ancho_cm ? Number(detalleForm.ancho_cm) : Number(producto.ancho_cm);
-      const largoActual = detalleForm.largo_cm ? Number(detalleForm.largo_cm) : Number(producto.largo_cm);
-      const micrajeActual = detalleForm.micraje_um ? Number(detalleForm.micraje_um) : Number(producto.micraje_um);
-      
-      // Crear objeto temporal con valores actuales
-      const productoConValoresActuales = {
-        ...producto,
-        ancho_cm: anchoActual,
-        largo_cm: largoActual,
-        micraje_um: micrajeActual
-      };
-      
-      // Precio fijo de 110
-      const precioPorKilo = 110;
-      
-      const precioUnitario = producto.material === 'CELOFAN' 
-        ? calcularPrecioUnitario(productoConValoresActuales, precioPorKilo)
-        : precioPorKilo;
+        const productoConValoresActuales = {
+          ...producto,
+          ancho_cm: Number(detalleForm.ancho_cm) || Number(producto.ancho_cm) || 0,
+          largo_cm: Number(detalleForm.largo_cm) || Number(producto.largo_cm) || 0,
+          micraje_um: Number(detalleForm.micraje_um) || Number(producto.micraje_um) || 0,
+        };
 
-      const precioConIva = precioUnitario * 1.16;
-      const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
-      const kgPorMillar = calcularKgPorMillar(productoConValoresActuales);
+        const precioPorKilo = 110;
+        const precioUnitario = producto.material === 'CELOFAN'
+          ? calcularPrecioUnitario(productoConValoresActuales, precioPorKilo)
+          : precioPorKilo;
 
-      // Actualizar todos los campos automáticamente
-      handleDetalleChange('precio_unitario_sin_iva', '110.00');
-      handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
-      handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
-      handleDetalleChange('importe_total', importeTotal.toFixed(2));
-      
-      // Solo actualizar dimensiones si no tienen valor
-      if (!detalleForm.ancho_cm) handleDetalleChange('ancho_cm', producto.ancho_cm?.toString() || '');
-      if (!detalleForm.largo_cm) handleDetalleChange('largo_cm', producto.largo_cm?.toString() || '');
-      if (!detalleForm.micraje_um) handleDetalleChange('micraje_um', producto.micraje_um?.toString() || '');
+        const precioConIva = precioUnitario * 1.16;
+        const importeTotal = cantidad > 0 ? precioConIva * cantidad : 0;
+        const kgPorMillar = calcularKgPorMillar(productoConValoresActuales);
+
+        // Actualizar todos los campos relevantes
+        handleDetalleChange('precio_unitario_sin_iva', '110.00');
+        handleDetalleChange('precio_unitario_con_iva', precioConIva.toFixed(2));
+        handleDetalleChange('kg_por_millar', kgPorMillar.toFixed(2));
+        handleDetalleChange('importe_total', importeTotal.toFixed(2));
+      }
     }
-  }
-}, [detalleForm.productos_id, detalleForm.cantidad, detalleForm.ancho_cm, detalleForm.largo_cm, detalleForm.micraje_um, productos, handleDetalleChange]);
+  }, [detalleForm.productos_id, detalleForm.cantidad, detalleForm.ancho_cm, detalleForm.largo_cm, detalleForm.micraje_um, productos, handleDetalleChange]);
   const exportarPDF = async () => {
     if (!pedido) return;
     
@@ -3190,41 +3179,7 @@ const handleEliminar = useCallback(async (id) => {
                     </View>
 
                     {/* Información de precios mejorada */}
-                    <View style={styles.preciosInfo}>
-                      <View style={styles.precioRow}>
-                        <Text style={styles.precioLabel}>Cantidad:</Text>
-                        <Text style={styles.precioValor}>
-                          {p.cantidad || 0} {p.productos?.material === 'POLIETILENO' ? 'kg' : 'mill'}
-                        </Text>
-                      </View>
-                      <View style={styles.precioRow}>
-                        <Text style={styles.precioLabel}>Precio Unit.:</Text>
-                        <Text style={styles.precioValor}>
-                          ${Number(p.precio_iva || 0).toLocaleString('es-MX', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </Text>
-                      </View>
-                      <View style={styles.precioRow}>
-                        <Text style={styles.precioLabel}>Importe:</Text>
-                        <Text style={styles.precioValorDestacado}>
-                          ${Number(p.importe || 0).toLocaleString('es-MX', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </Text>
-                      </View>
-                      <View style={styles.precioRow}>
-                        <Text style={styles.precioLabel}>Pendiente:</Text>
-                        <Text style={[styles.precioValor, { color: pagadoPedido ? '#22c55e' : '#ef4444' }]}>
-                          ${Number(p.notas_venta?.pago_pendiente || 0).toLocaleString('es-MX', {
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </Text>
-                      </View>
-                    </View>
+                 
                   </View>
 
                   {/* Indicadores de estado */}
