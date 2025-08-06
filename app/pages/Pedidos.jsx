@@ -18,9 +18,9 @@ import {
 import { TextInput as PaperInput } from 'react-native-paper';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
-import PedidoDetails from '../components/pedidos/PedidoDetails';
 import Pagination from '../components/pedidos/Pagination';
-import { LoadingComponent, EmptyState } from '../components/pedidos/UtilityComponents';
+import PedidoDetails from '../components/pedidos/PedidoDetails';
+import { EmptyState, LoadingComponent } from '../components/pedidos/UtilityComponents';
 import styles from './styles/Pedidos.styles';
 
 export default function Pedidos() {
@@ -234,7 +234,7 @@ const resetForm = useCallback(() => {
         .from('notas_venta')
         .select(`
           *,
-          clientes!inner(
+          clientes!notas_venta_clientes_id_fkey(
             id,
             nombre_contacto,
             empresa,
@@ -1489,9 +1489,11 @@ const handleEliminar = useCallback(async (id) => {
       }, 0);
       
       const iva = aplicarIva ? subtotal * 0.16 : 0;
-      const total = subtotal + iva - Number(form.descuento || 0);
+      const subtotalConIva = subtotal + iva;
+      const descuentoImporte = (Number(form.descuento || 0) / 100) * subtotalConIva;
+      const total = subtotalConIva - descuentoImporte;
       
-      return { subtotal, iva, total };
+      return { subtotal, iva, total, descuentoImporte };
     })();
 
     const productoSeleccionadoForm = productos.find(p => p.id === Number(detalleForm.productos_id));
@@ -1967,9 +1969,9 @@ const handleEliminar = useCallback(async (id) => {
                 )}
                 
                 <View style={styles.calculoItem}>
-                  <Text style={styles.calculoLabel}>Descuento:</Text>
+                  <Text style={styles.calculoLabel}>Descuento ({Number(form.descuento || 0)}%):</Text>
                   <Text style={styles.calculoValor}>
-                    ${Number(form.descuento || 0).toLocaleString('es-MX', { 
+                    ${totalesFormulario.descuentoImporte.toLocaleString('es-MX', { 
                       minimumFractionDigits: 2, 
                       maximumFractionDigits: 2 
                     })}
@@ -2104,25 +2106,30 @@ const handleEliminar = useCallback(async (id) => {
             const vendedorPedido = vendedores.find((v) => v.id === p.notas_venta?.clientes?.vendedores_id);
             const pagadoPedido = (p.notas_venta?.pago_pendiente || 0) <= 0;
             const entregadoPedido = p.entregas?.length > 0;
+            
+            // Obtener todos los materiales únicos de la nota de venta
+            const pedidosDeLaNota = pedidos.filter(pedido => pedido.notas_venta_id === p.notas_venta_id);
+            const materialesUnicos = [...new Set(pedidosDeLaNota.map(pedido => pedido.productos?.material).filter(Boolean))];
+            const materialesTexto = materialesUnicos.length > 0 ? materialesUnicos.join(', ') : 'N/A';
 
             return (
               <View key={`pedido-${p.id}`} style={styles.card}>
                 <View style={styles.cardGrid}>
                   <View style={styles.infoCompleta}>
-                    <Text style={styles.nombre}>Folio: #{p.id}</Text>
-                    <Text style={styles.info}>Cliente: {p.notas_venta?.clientes?.nombre_contacto}</Text>
-                    <Text style={styles.info} numberOfLines={1}>
-                      Producto: {p.productos?.nombre}
-                    </Text>
+                    <Text style={styles.nombre}>Folio: #{p.notas_venta_id}</Text>
+                    <Text style={styles.info}>Cliente: {p.notas_venta?.clientes?.empresa || p.notas_venta?.clientes?.nombre_contacto || 'Sin cliente'}</Text>
+                    
 
                     <Text style={styles.label}>Material:</Text>
                     <View style={styles.materialTags}>
-                      <View style={styles.materialTag}>
-                        <Text style={styles.materialTagText}>{p.productos?.material || 'N/A'}</Text>
-                      </View>
-                      {p.productos?.tipo && (
-                        <View style={styles.tipoMaterialTag}>
-                          <Text style={styles.tipoMaterialTagText}>{p.productos.tipo}</Text>
+                      {materialesUnicos.map((material, index) => (
+                        <View key={`material-${index}`} style={styles.materialTag}>
+                          <Text style={styles.materialTagText}>{material}</Text>
+                        </View>
+                      ))}
+                      {materialesUnicos.length === 0 && (
+                        <View style={styles.materialTag}>
+                          <Text style={styles.materialTagText}>N/A</Text>
                         </View>
                       )}
                     </View>
