@@ -991,5 +991,5 @@ const fetchPedidosDetalle = useCallback(async (notaVentaId) => {
     handleEditarProductoTemporal,
     handleEliminar,
     handleEntregar,
-  };
+  };
 };
